@@ -12,7 +12,8 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timedelta
 from pathlib import Path
-import hashlib, os, uuid, shutil, json, urllib.request, urllib.parse
+import hashlib, os, uuid, shutil, json, urllib.request, urllib.parse, boto3
+from botocore.config import Config
 
 # ── Database Setup ──────────────────────────────────────────────────────────
 DATABASE_URL = "sqlite:///./shareaspot.db"
@@ -20,8 +21,49 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+# ── R2 Storage Setup ────────────────────────────────────────────────────────
+R2_ACCOUNT_ID    = os.environ.get("R2_ACCOUNT_ID", "")
+R2_ACCESS_KEY    = os.environ.get("R2_ACCESS_KEY", "")
+R2_SECRET_KEY    = os.environ.get("R2_SECRET_KEY", "")
+R2_BUCKET        = os.environ.get("R2_BUCKET", "shareaspot")
+R2_PUBLIC_URL    = os.environ.get("R2_PUBLIC_URL", "").rstrip("/")
+USE_R2           = all([R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_PUBLIC_URL])
+
+if USE_R2:
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+        aws_access_key_id=R2_ACCESS_KEY,
+        aws_secret_access_key=R2_SECRET_KEY,
+        config=Config(signature_version="s3v4"),
+        region_name="auto",
+    )
+
+# Local fallback for development
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+def upload_file(file_bytes: bytes, fname: str, content_type: str = "image/jpeg") -> str:
+    """Upload to R2 if configured, otherwise save locally. Returns public URL."""
+    if USE_R2:
+        s3.put_object(Bucket=R2_BUCKET, Key=fname, Body=file_bytes, ContentType=content_type)
+        return f"{R2_PUBLIC_URL}/{fname}"
+    else:
+        with open(UPLOAD_DIR / fname, "wb") as f:
+            f.write(file_bytes)
+        return f"/uploads/{fname}"
+
+def delete_file(fname: str):
+    """Delete from R2 if configured, otherwise delete locally."""
+    if USE_R2:
+        try:
+            s3.delete_object(Bucket=R2_BUCKET, Key=fname)
+        except Exception:
+            pass
+    else:
+        fp = UPLOAD_DIR / fname
+        if fp.exists():
+            fp.unlink()
 
 # ── Association Tables ───────────────────────────────────────────────────────
 post_tags = Table("post_tags", Base.metadata,
@@ -209,7 +251,7 @@ def serialize_post(post: Post, current_user_id: int = None):
         "location_name":  post.location_name,
         "lat":            post.lat,
         "lng":            post.lng,
-        "photos":         [f"http://localhost:8000/uploads/{p}" for p in photos],
+        "photos":         [p if p.startswith("http") else f"/uploads/{p}" for p in photos],
         "author":         {
             "id":       post.author.id,
             "username": post.author.username,
@@ -235,7 +277,7 @@ def serialize_user(user: User, current_user_id: int = None, db: Session = None):
         "id":              user.id,
         "username":        user.username,
         "bio":             user.bio or "",
-        "avatar":          user.avatar,
+        "avatar":          user.avatar if (user.avatar and user.avatar.startswith("http")) else (f"/uploads/{user.avatar}" if user.avatar else None),
         "post_count":      len(user.posts),
         "follower_count":  len(user.followers),
         "following_count": len(user.following),
@@ -350,9 +392,8 @@ async def create_post(
         if photo.filename:
             ext = Path(photo.filename).suffix or ".jpg"
             fname = f"{uuid.uuid4().hex}{ext}"
-            with open(UPLOAD_DIR / fname, "wb") as f:
-                shutil.copyfileobj(photo.file, f)
-            saved.append(fname)
+            url = upload_file(photo.file.read(), fname)
+            saved.append(url)
 
     # Use manual coordinates if provided, otherwise geocode the address
     if manual_lat is not None and manual_lng is not None:
@@ -421,20 +462,18 @@ async def edit_post(
     existing = json.loads(post.photos or "[]")
     if remove_photos:
         to_remove = set(json.loads(remove_photos))
-        for fname in to_remove:
-            fp = UPLOAD_DIR / fname
-            if fp.exists():
-                fp.unlink()
-        existing = [f for f in existing if f not in to_remove]
+        for f in to_remove:
+            fname = f.split("/")[-1]
+            delete_file(fname)
+        existing = [f for f in existing if f.split("/")[-1] not in to_remove and f not in to_remove]
 
     # Append new photos
     for photo in photos:
         if photo.filename:
             ext = Path(photo.filename).suffix or ".jpg"
             fname = f"{uuid.uuid4().hex}{ext}"
-            with open(UPLOAD_DIR / fname, "wb") as f:
-                shutil.copyfileobj(photo.file, f)
-            existing.append(fname)
+            url = upload_file(photo.file.read(), fname)
+            existing.append(url)
 
     post.photos = json.dumps(existing)
 
@@ -735,16 +774,12 @@ def delete_account(token: str, db: Session = Depends(get_db)):
     # Delete all posts and their photos
     posts = db.query(Post).filter(Post.user_id == user.id).all()
     for post in posts:
-        for fname in json.loads(post.photos or "[]"):
-            fp = UPLOAD_DIR / fname
-            if fp.exists():
-                fp.unlink()
+        for f in json.loads(post.photos or "[]"):
+            delete_file(f.split("/")[-1])
         db.delete(post)
     # Delete avatar file
     if user.avatar:
-        fp = UPLOAD_DIR / user.avatar
-        if fp.exists():
-            fp.unlink()
+        delete_file(user.avatar.split("/")[-1])
     # Delete associated records
     db.query(Like).filter(Like.user_id == user.id).delete()
     db.query(Follow).filter((Follow.follower_id == user.id) | (Follow.following_id == user.id)).delete()
@@ -763,8 +798,7 @@ async def upload_avatar(
     user = require_user(token, db)
     ext = Path(avatar.filename).suffix or ".jpg"
     fname = f"avatar_{uuid.uuid4().hex}{ext}"
-    with open(UPLOAD_DIR / fname, "wb") as f:
-        shutil.copyfileobj(avatar.file, f)
-    user.avatar = fname
+    url = upload_file(avatar.file.read(), fname)
+    user.avatar = url
     db.commit()
-    return {"avatar": fname}
+    return {"avatar": url}
