@@ -217,15 +217,29 @@ def require_user(token: str, db: Session):
     return user
 
 def geocode(address: str):
-    """Geocode using Nominatim via urllib only. Returns (lat, lng) or (None, None)."""
+    """Geocode an address. Tries Nominatim first, falls back to Photon. Returns (lat, lng) or (None, None)."""
+    # Try Nominatim
     try:
         params = urllib.parse.urlencode({"q": address, "format": "json", "limit": "1"})
         url = f"https://nominatim.openstreetmap.org/search?{params}"
-        req = urllib.request.Request(url, headers={"User-Agent": "ShareaSpot/1.0 (shareaspot-app)"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        req = urllib.request.Request(url, headers={"User-Agent": "ShareaSpot/1.0 contact@shareaspot.app"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode())
         if data:
             return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception:
+        pass
+    # Fallback: Photon (Komoot) geocoder
+    try:
+        params = urllib.parse.urlencode({"q": address, "limit": "1"})
+        url = f"https://photon.komoot.io/api/?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "ShareaSpot/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+        features = data.get("features", [])
+        if features:
+            coords = features[0]["geometry"]["coordinates"]
+            return float(coords[1]), float(coords[0])
     except Exception:
         pass
     return None, None
@@ -514,6 +528,24 @@ def delete_post(post_id: int, token: str, db: Session = Depends(get_db)):
     db.delete(post)
     db.commit()
     return {"deleted": True}
+
+@app.post("/admin/fix-coordinates")
+def fix_missing_coordinates(token: str, db: Session = Depends(get_db)):
+    """Backfill coordinates for posts that have an address but no lat/lng."""
+    user = require_user(token, db)
+    posts = db.query(Post).filter(Post.lat == None, Post.lng == None).all()
+    fixed = 0
+    for post in posts:
+        addr_parts = [post.address_street, post.address_city, post.address_state, post.location_zip]
+        addr_str = ", ".join(p for p in addr_parts if p)
+        if addr_str:
+            lat, lng = geocode(addr_str)
+            if lat and lng:
+                post.lat = lat
+                post.lng = lng
+                fixed += 1
+    db.commit()
+    return {"fixed": fixed, "total_missing": len(posts)}
 
 @app.get("/feed")
 def feed(
