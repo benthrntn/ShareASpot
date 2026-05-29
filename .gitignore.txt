@@ -1,0 +1,4 @@
+backend/shareaspot.db
+backend/uploads/
+__pycache__/
+*.pyc

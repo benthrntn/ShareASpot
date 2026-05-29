@@ -1,0 +1,1832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ShareaSpot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#fafafa; }
+    .post-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+    .photo-thumb { width:100%; height:220px; object-fit:cover; }
+    .tag-chip  { display:inline-block; background:#eff6ff; color:#2563eb; border-radius:9999px; padding:2px 10px; font-size:12px; margin:2px; cursor:pointer; }
+    .tag-chip:hover { background:#dbeafe; }
+    .cat-chip  { display:inline-block; background:#f0fdf4; color:#16a34a; border-radius:9999px; padding:2px 10px; font-size:12px; margin:2px; }
+    .cat-filter { cursor:pointer; transition:all .15s; }
+    .cat-filter.active { background:#1d4ed8 !important; color:#fff !important; }
+    .feed-tab { cursor:pointer; padding:8px 20px; font-size:14px; font-weight:500; border-bottom:2px solid transparent; transition:all .15s; color:#6b7280; }
+    .feed-tab.active { border-bottom-color:#2563eb; color:#2563eb; }
+    .modal-bg { position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px; }
+    .modal    { background:#fff;border-radius:16px;max-width:660px;width:100%;max-height:90vh;overflow-y:auto; }
+    .photo-carousel { position:relative; }
+    .photo-carousel img { width:100%;max-height:420px;object-fit:cover;border-radius:12px 12px 0 0; }
+    .dot-nav { position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:5px; }
+    .dot { width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.55); cursor:pointer; }
+    .dot.active { background:#fff; }
+    .heart-btn.liked svg { fill:#ef4444; stroke:#ef4444; }
+    .preview-img { width:76px;height:76px;object-fit:cover;border-radius:8px; }
+    input,textarea { outline:none; }
+    ::-webkit-scrollbar { width:8px; height:8px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:4px; }
+    ::-webkit-scrollbar-thumb:hover { background:#94a3b8; }
+    .spinner { border:3px solid #e2e8f0; border-top-color:#2563eb; border-radius:50%; width:36px; height:36px; animation:spin 0.7s linear infinite; margin:60px auto; }
+    @keyframes spin { to { transform:rotate(360deg) } }
+    #map-view { height:500px; border-radius:12px; overflow:hidden; }
+    .notif-panel { position:fixed; top:56px; right:16px; width:320px; max-height:400px; overflow-y:auto; background:#fff; border-radius:16px; box-shadow:0 8px 32px rgba(0,0,0,.15); z-index:45; border:1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════ AUTH SCREEN ══════════════ -->
+<div id="auth-screen" class="min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-lg w-full max-w-sm p-8">
+    <div class="text-center mb-8">
+      <div class="text-4xl mb-2">📍</div>
+      <h1 class="text-2xl font-bold text-gray-900">ShareaSpot</h1>
+      <p class="text-gray-500 text-sm mt-1">Discover & share amazing locations</p>
+    </div>
+    <div class="flex border border-gray-200 rounded-xl mb-6 overflow-hidden">
+      <button onclick="showTab('login')"    id="tab-login"    class="flex-1 py-2 text-sm font-medium bg-blue-600 text-white">Login</button>
+      <button onclick="showTab('register')" id="tab-register" class="flex-1 py-2 text-sm font-medium text-gray-500">Register</button>
+    </div>
+    <div id="form-login">
+      <form onsubmit="event.preventDefault(); doLogin()" autocomplete="on">
+        <input id="login-user" type="text"     placeholder="Username" name="username" autocomplete="username"
+          class="w-full border border-gray-200 rounded-xl px-4 py-3 mb-3 text-sm focus:border-blue-400"/>
+        <input id="login-pass" type="password" placeholder="Password" name="password" autocomplete="current-password"
+          class="w-full border border-gray-200 rounded-xl px-4 py-3 mb-4 text-sm focus:border-blue-400"/>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-3 text-sm font-semibold transition">Sign In</button>
+      </form>
+    </div>
+    <div id="form-register" class="hidden">
+      <form onsubmit="event.preventDefault(); doRegister()" autocomplete="on">
+        <input id="reg-user"  type="text"     placeholder="Username" name="username" autocomplete="username"
+          class="w-full border border-gray-200 rounded-xl px-4 py-3 mb-3 text-sm focus:border-blue-400"/>
+        <input id="reg-email" type="email"    placeholder="Email"    name="email"    autocomplete="email"
+          class="w-full border border-gray-200 rounded-xl px-4 py-3 mb-3 text-sm focus:border-blue-400"/>
+        <input id="reg-pass"  type="password" placeholder="Password" name="password" autocomplete="new-password"
+          class="w-full border border-gray-200 rounded-xl px-4 py-3 mb-4 text-sm focus:border-blue-400"/>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-3 text-sm font-semibold transition">Create Account</button>
+      </form>
+    </div>
+    <p id="auth-error" class="text-red-500 text-xs text-center mt-3 hidden"></p>
+    <p class="text-xs text-gray-400 text-center mt-4">
+      By signing up you agree to our
+      <button onclick="document.getElementById('terms-modal').classList.remove('hidden')" class="text-blue-500 underline">Terms of Service</button>
+      and
+      <button onclick="document.getElementById('privacy-modal').classList.remove('hidden')" class="text-blue-500 underline">Privacy Policy</button>
+    </p>
+  </div>
+</div>
+
+<!-- ══════════════ MAIN APP ══════════════ -->
+<div id="main-app" class="hidden min-h-screen">
+
+  <!-- Top Nav -->
+  <header class="bg-white border-b border-gray-100 sticky top-0 z-40">
+    <div class="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
+      <!-- Logo -->
+      <div class="flex items-center gap-2 cursor-pointer shrink-0" onclick="goHome()">
+        <span class="text-xl">📍</span>
+        <span class="font-bold text-gray-900 text-lg hidden sm:block">ShareaSpot</span>
+      </div>
+
+      <!-- Search -->
+      <div class="flex-1 relative" id="search-wrap">
+        <input id="search-input" type="text" placeholder="Search spots or people..."
+          class="w-full border border-gray-200 rounded-xl px-4 py-2 text-sm focus:border-blue-400"
+          oninput="debounceSearch()" autocomplete="off"/>
+        <div id="search-dropdown"
+          class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 max-h-64 overflow-y-auto">
+        </div>
+      </div>
+
+      <!-- Right side -->
+      <div class="flex items-center gap-2 shrink-0">
+        <!-- Notification bell -->
+        <div class="relative">
+          <button id="notif-btn" onclick="toggleNotifPanel()"
+            class="relative w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-lg transition">
+            🔔
+            <span id="notif-badge"
+              class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">
+            </span>
+          </button>
+        </div>
+
+        <!-- Share Spot -->
+        <button onclick="openCreateModal()"
+          class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition flex items-center gap-1">
+          <span class="text-base leading-none">+</span> <span class="hidden sm:inline">Share Spot</span>
+        </button>
+
+        <!-- Avatar + dropdown -->
+        <div class="relative" id="avatar-menu-wrap">
+          <button onclick="toggleAvatarMenu()"
+            id="avatar-btn"
+            class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center hover:bg-blue-200 transition overflow-hidden">
+            ?
+          </button>
+          <div id="avatar-dropdown" class="hidden absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50">
+            <button onclick="showProfile(state.userId); closeAvatarMenu()"
+              class="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition">
+              👤 My Profile
+            </button>
+            <button onclick="openEditProfile(); closeAvatarMenu()"
+              class="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition border-t border-gray-100">
+              ✏️ Edit Profile
+            </button>
+            <button onclick="closeAvatarMenu(); document.getElementById('privacy-modal').classList.remove('hidden')"
+              class="w-full text-left px-4 py-3 text-sm text-gray-500 hover:bg-gray-50 transition border-t border-gray-100">
+              🔒 Privacy Policy
+            </button>
+            <button onclick="closeAvatarMenu(); document.getElementById('terms-modal').classList.remove('hidden')"
+              class="w-full text-left px-4 py-3 text-sm text-gray-500 hover:bg-gray-50 transition">
+              📄 Terms of Service
+            </button>
+            <button onclick="closeAvatarMenu(); openDeleteAccount()"
+              class="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-50 transition border-t border-gray-100">
+              🗑 Delete Account
+            </button>
+            <button onclick="doLogout()"
+              class="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50 transition border-t border-gray-100">
+              🚪 Log Out
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Panel (outside header) -->
+  <div id="notif-panel" class="notif-panel hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+      <span class="font-semibold text-gray-900 text-sm">Notifications</span>
+      <button onclick="markAllRead()" class="text-xs text-blue-600 hover:underline">Mark all read</button>
+    </div>
+    <div id="notif-list" class="p-2"></div>
+  </div>
+
+  <!-- Feed tabs -->
+  <div class="bg-white border-b border-gray-100">
+    <div class="max-w-5xl mx-auto px-4 flex items-center gap-0">
+      <button class="feed-tab active" id="tab-all"       onclick="switchFeedTab('all')">All Spots</button>
+      <button class="feed-tab"        id="tab-following" onclick="switchFeedTab('following')">Following</button>
+    </div>
+  </div>
+
+  <!-- Category filter bar -->
+  <div class="bg-white border-b border-gray-100">
+    <div class="max-w-5xl mx-auto px-4">
+      <div id="cat-bar" class="flex gap-2 overflow-x-auto py-3" style="scrollbar-width:auto; scrollbar-color:#cbd5e1 transparent;">
+        <!-- pills injected here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Zip filter + controls -->
+  <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3 flex-wrap">
+    <input id="zip-filter" type="text" placeholder="Filter by zip code..." maxlength="10"
+      class="border border-gray-200 rounded-xl px-4 py-2 text-sm w-48 focus:border-blue-400"/>
+    <button onclick="applyZipFilter()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-4 py-2 rounded-xl transition">Apply</button>
+    <button onclick="clearZipFilter()" class="text-gray-400 hover:text-gray-600 text-sm">Clear</button>
+    <span id="post-count" class="text-gray-400 text-sm"></span>
+    <!-- Tag filter indicator -->
+    <span id="tag-filter-indicator" class="hidden items-center gap-1 bg-blue-100 text-blue-700 text-xs px-3 py-1 rounded-full">
+      #<span id="active-tag-label"></span>
+      <button onclick="clearTagFilter()" class="ml-1 hover:text-red-500 font-bold">×</button>
+    </span>
+    <div class="ml-auto">
+      <button id="map-toggle" onclick="toggleMapView()"
+        class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-4 py-2 rounded-xl transition">
+        🗺 Map
+      </button>
+    </div>
+  </div>
+
+  <!-- Content area -->
+  <div class="max-w-5xl mx-auto px-4 pb-12" id="content-area">
+
+    <!-- Feed view -->
+    <div id="feed-view">
+      <!-- Trending strip (All Spots only) -->
+      <div id="trending-strip" class="hidden mb-6">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-sm font-semibold text-gray-800">🔥 Trending This Week</span>
+        </div>
+        <div id="trending-cards" class="flex gap-3 overflow-x-auto pb-2" style="scrollbar-width:thin;"></div>
+      </div>
+
+      <!-- Map view -->
+      <div id="map-view" class="hidden mb-6"></div>
+
+      <!-- Spinner -->
+      <div id="feed-spinner" class="hidden"><div class="spinner"></div></div>
+
+      <div id="post-grid" class="post-grid"></div>
+      <p id="empty-msg" class="hidden text-center text-gray-400 py-20 text-sm">No spots here yet — be the first to share one!</p>
+    </div>
+
+    <!-- Profile view -->
+    <div id="profile-view" class="hidden">
+      <div class="bg-white rounded-2xl p-6 mb-6 shadow-sm">
+        <div class="flex items-start gap-5">
+          <div id="profile-avatar-wrap" class="shrink-0">
+            <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-2xl font-bold text-blue-600" id="profile-avatar-letter">?</div>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h2 class="text-xl font-bold text-gray-900" id="profile-name">—</h2>
+            <p class="text-gray-500 text-sm mt-0.5" id="profile-bio"></p>
+            <div class="flex gap-5 mt-2 text-sm text-gray-500">
+              <span><b class="text-gray-900" id="profile-posts">0</b> spots</span>
+              <span><b class="text-gray-900" id="profile-followers">0</b> followers</span>
+              <span><b class="text-gray-900" id="profile-following-count">0</b> following</span>
+            </div>
+          </div>
+          <div id="follow-btn-wrap"></div>
+        </div>
+      </div>
+      <div id="profile-grid" class="post-grid"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════ CREATE POST MODAL ══════════════ -->
+<div id="create-modal" class="modal-bg hidden" onclick="closeIfBg(event,'create-modal')">
+  <div class="modal p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-lg font-bold text-gray-900">Share a Spot 📍</h2>
+      <button onclick="closeModal('create-modal')" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+    </div>
+    <div class="space-y-4">
+
+      <!-- Photos -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Photos</label>
+        <div class="mt-1 border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer hover:border-blue-300 transition" onclick="document.getElementById('photo-input').click()">
+          <div class="text-3xl mb-1">📷</div>
+          <p class="text-sm text-gray-400">Click to upload photos</p>
+          <input type="file" id="photo-input" multiple accept="image/*" class="hidden" onchange="previewPhotos(event)"/>
+        </div>
+        <div id="photo-previews" class="flex flex-wrap gap-2 mt-2"></div>
+      </div>
+
+      <!-- Title -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Spot Title</label>
+        <input id="post-title" type="text" placeholder="e.g. Hidden Rooftop on 5th Ave"
+          class="mt-1 w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+      </div>
+
+      <!-- Description -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Description</label>
+        <textarea id="post-desc" rows="3" placeholder="What makes this spot special? Best time to visit? Any tips?"
+          class="mt-1 w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400 resize-none"></textarea>
+      </div>
+
+      <!-- Location — toggle between Address and Coordinates -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Location</label>
+          <div class="flex border border-gray-200 rounded-lg overflow-hidden text-xs">
+            <button type="button" id="loc-tab-address" onclick="switchLocTab('address')"
+              class="px-3 py-1 bg-blue-600 text-white font-medium transition">Address</button>
+            <button type="button" id="loc-tab-coords" onclick="switchLocTab('coords')"
+              class="px-3 py-1 text-gray-500 font-medium transition">Coordinates</button>
+          </div>
+        </div>
+
+        <!-- Address fields -->
+        <div id="loc-address-fields">
+          <input id="post-street" type="text" placeholder="Street address (e.g. 123 Main St)"
+            class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400 mb-2"/>
+          <div class="grid grid-cols-3 gap-2">
+            <input id="post-city"  type="text" placeholder="City"
+              class="col-span-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+            <input id="post-state" type="text" placeholder="State" maxlength="2"
+              class="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+            <input id="post-zip"   type="text" placeholder="Zip" maxlength="10"
+              class="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+          </div>
+        </div>
+
+        <!-- Coordinate fields -->
+        <div id="loc-coords-fields" class="hidden">
+          <!-- Google Maps paste field -->
+          <div class="mb-2">
+            <label class="text-xs text-gray-400 mb-1 block">Paste from Google Maps</label>
+            <input id="post-coords-paste" type="text"
+              placeholder='e.g. 37°14\'42.9"N 122°08\'43.2"W or 40.7061, -73.9969'
+              class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"
+              oninput="parseCoordsPaste(this.value)"/>
+            <p id="coords-parse-msg" class="text-xs mt-1 hidden"></p>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Latitude</label>
+              <input id="post-lat" type="number" step="any" placeholder="e.g. 40.7061"
+                class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Longitude</label>
+              <input id="post-lng" type="number" step="any" placeholder="e.g. -73.9969"
+                class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+            </div>
+          </div>
+        </div>
+
+        <!-- Display name (always shown) -->
+        <input id="post-locname" type="text" placeholder="Display name (e.g. Brooklyn, NY)"
+          class="mt-2 w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+        <!-- Hidden zip fallback for coord mode -->
+        <input id="post-zip-hidden" type="hidden" value="00000"/>
+      </div>
+
+      <!-- Categories -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Who is this spot for?</label>
+        <div id="cat-checkboxes" class="mt-2 flex flex-wrap gap-2"></div>
+      </div>
+
+      <!-- Tags -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Tags</label>
+        <input id="post-tags" type="text" placeholder="#golden-hour, #urban, #rooftop"
+          class="mt-1 w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+        <p class="text-xs text-gray-400 mt-1">Comma-separated, # optional</p>
+      </div>
+
+      <p id="create-error" class="text-red-500 text-xs hidden"></p>
+
+      <button onclick="submitPost()"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-3 text-sm font-semibold transition">
+        Share Spot
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ EDIT POST MODAL ══════════════ -->
+<div id="edit-modal" class="modal-bg hidden" onclick="closeIfBg(event,'edit-modal')">
+  <div class="modal p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-lg font-bold text-gray-900">Edit Spot ✏️</h2>
+      <button onclick="closeModal('edit-modal')" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+    </div>
+    <div class="space-y-4">
+
+      <!-- Existing photos -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2 block">Current Photos</label>
+        <div id="edit-existing-photos" class="flex flex-wrap gap-2 mb-2"></div>
+        <p class="text-xs text-gray-400">Click a photo to remove it.</p>
+      </div>
+
+      <!-- Add new photos -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2 block">Add More Photos</label>
+        <label class="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-2xl p-5 cursor-pointer hover:border-blue-400 transition">
+          <span class="text-2xl mb-1">📷</span>
+          <span class="text-sm text-gray-400">Click to upload more photos</span>
+          <input type="file" id="edit-photo-input" accept="image/*" multiple class="hidden" onchange="previewEditPhotos()"/>
+        </label>
+        <div id="edit-photo-previews" class="flex flex-wrap gap-2 mt-2"></div>
+      </div>
+
+      <!-- Title -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">Spot Title</label>
+        <input id="edit-title" type="text" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+      </div>
+
+      <!-- Description -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">Description</label>
+        <textarea id="edit-desc" rows="4" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400 resize-none"></textarea>
+      </div>
+
+      <!-- Categories -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2 block">Who is this spot for?</label>
+        <div id="edit-cats" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <!-- Tags -->
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">Tags</label>
+        <input id="edit-tags" type="text" placeholder="#golden-hour, #urban, #rooftop"
+          class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+        <p class="text-xs text-gray-400 mt-1">Comma-separated, # optional</p>
+      </div>
+
+      <p id="edit-error" class="text-red-500 text-sm hidden"></p>
+      <button onclick="submitEdit()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl py-3 text-sm transition">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ POST DETAIL MODAL ══════════════ -->
+<div id="detail-modal" class="modal-bg hidden" onclick="closeIfBg(event,'detail-modal')">
+  <div class="modal" id="detail-content"></div>
+</div>
+
+<!-- ══════════════ PRIVACY POLICY MODAL ══════════════ -->
+<div id="privacy-modal" class="modal-bg hidden" onclick="closeIfBg(event,'privacy-modal')">
+  <div class="modal p-6 max-w-lg">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-lg font-bold text-gray-900">Privacy Policy</h2>
+      <button onclick="closeModal('privacy-modal')" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+    </div>
+    <div class="text-sm text-gray-600 space-y-4 overflow-y-auto max-h-[65vh] pr-1">
+      <p class="text-xs text-gray-400">Last updated: June 2025</p>
+      <p>ShareaSpot ("we", "us", or "our") operates this application. This policy explains what information we collect, how we use it, and your rights.</p>
+      <h3 class="font-semibold text-gray-800">Information We Collect</h3>
+      <p>When you create an account we collect your username and email address. When you share a spot we collect the content you provide, including photos, text descriptions, and location information. We do not collect precise device location without your explicit input.</p>
+      <h3 class="font-semibold text-gray-800">How We Use Your Information</h3>
+      <p>Your information is used solely to operate the ShareaSpot service — displaying your posts to other users, enabling social features such as follows and likes, and sending in-app notifications. We do not sell your data to third parties or use it for advertising.</p>
+      <h3 class="font-semibold text-gray-800">Photos and Content</h3>
+      <p>Photos you upload are stored on our servers and displayed publicly to other ShareaSpot users. Do not upload photos containing sensitive personal information. You retain ownership of content you post.</p>
+      <h3 class="font-semibold text-gray-800">Account Deletion</h3>
+      <p>You can delete your account at any time from the account menu. Deleting your account permanently removes all your posts, photos, and personal information from our servers within 30 days.</p>
+      <h3 class="font-semibold text-gray-800">Data Security</h3>
+      <p>We take reasonable measures to protect your information. Passwords are stored as cryptographic hashes and never in plain text.</p>
+      <h3 class="font-semibold text-gray-800">Contact</h3>
+      <p>Questions about this policy can be sent to the app developer.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ TERMS OF SERVICE MODAL ══════════════ -->
+<div id="terms-modal" class="modal-bg hidden" onclick="closeIfBg(event,'terms-modal')">
+  <div class="modal p-6 max-w-lg">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-lg font-bold text-gray-900">Terms of Service</h2>
+      <button onclick="closeModal('terms-modal')" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+    </div>
+    <div class="text-sm text-gray-600 space-y-4 overflow-y-auto max-h-[65vh] pr-1">
+      <p class="text-xs text-gray-400">Last updated: June 2025</p>
+      <p>By using ShareaSpot you agree to these terms. Please read them carefully.</p>
+      <h3 class="font-semibold text-gray-800">Acceptable Use</h3>
+      <p>You may use ShareaSpot to discover and share real-world locations. You agree not to post content that is illegal, hateful, sexually explicit, or that violates the privacy of others. You must be 13 years of age or older to create an account.</p>
+      <h3 class="font-semibold text-gray-800">Your Content</h3>
+      <p>You retain ownership of photos and descriptions you post. By posting content you grant ShareaSpot a non-exclusive licence to display that content within the app. You are responsible for ensuring you have the right to share any content you upload.</p>
+      <h3 class="font-semibold text-gray-800">Account Responsibility</h3>
+      <p>You are responsible for keeping your account credentials secure. Do not share your password. Notify us immediately if you believe your account has been compromised.</p>
+      <h3 class="font-semibold text-gray-800">Prohibited Conduct</h3>
+      <p>You may not use ShareaSpot to spam other users, impersonate others, scrape data, attempt to gain unauthorised access to the service, or use the app in any way that could damage or overburden our infrastructure.</p>
+      <h3 class="font-semibold text-gray-800">Termination</h3>
+      <p>We reserve the right to suspend or delete accounts that violate these terms. You may delete your account at any time.</p>
+      <h3 class="font-semibold text-gray-800">Limitation of Liability</h3>
+      <p>ShareaSpot is provided "as is" without warranties of any kind. We are not liable for any indirect, incidental, or consequential damages arising from your use of the app.</p>
+      <h3 class="font-semibold text-gray-800">Changes to Terms</h3>
+      <p>We may update these terms from time to time. Continued use of the app after changes constitutes acceptance of the new terms.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ DELETE ACCOUNT MODAL ══════════════ -->
+<div id="delete-account-modal" class="modal-bg hidden" onclick="closeIfBg(event,'delete-account-modal')">
+  <div class="modal p-6 max-w-sm">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-lg font-bold text-red-600">Delete Account</h2>
+      <button onclick="closeModal('delete-account-modal')" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+    </div>
+    <div class="space-y-4">
+      <p class="text-sm text-gray-600">This will permanently delete your account, all your spots, and all your photos. <strong>This cannot be undone.</strong></p>
+      <p class="text-sm text-gray-600">Type <strong>DELETE</strong> to confirm:</p>
+      <input id="delete-confirm-input" type="text" placeholder="Type DELETE here"
+        class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-red-400"/>
+      <p id="delete-account-error" class="text-red-500 text-xs hidden"></p>
+      <button onclick="submitDeleteAccount()"
+        class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl py-3 text-sm transition">
+        Permanently Delete My Account
+      </button>
+      <button onclick="closeModal('delete-account-modal')"
+        class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl py-3 text-sm transition">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ EDIT PROFILE MODAL ══════════════ -->
+<div id="edit-profile-modal" class="modal-bg hidden" onclick="closeIfBg(event,'edit-profile-modal')">
+  <div class="modal p-6 max-w-sm">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-lg font-bold text-gray-900">Edit Profile</h2>
+      <button onclick="closeModal('edit-profile-modal')" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+    </div>
+    <div class="space-y-4">
+      <!-- Avatar upload -->
+      <div class="flex items-center gap-4">
+        <div id="edit-avatar-preview" class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-2xl font-bold text-blue-600 overflow-hidden shrink-0">
+          ?
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1">Profile Photo</label>
+          <input type="file" id="avatar-input" accept="image/*" class="hidden" onchange="onAvatarFileChange(event)"/>
+          <button onclick="document.getElementById('avatar-input').click()"
+            class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs px-3 py-2 rounded-lg transition">
+            Choose Photo
+          </button>
+        </div>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Username</label>
+        <input id="edit-username" type="text"
+          class="mt-1 w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Bio</label>
+        <textarea id="edit-bio" rows="3"
+          class="mt-1 w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400 resize-none"></textarea>
+      </div>
+      <p id="edit-profile-error" class="text-red-500 text-xs hidden"></p>
+      <button onclick="saveProfile()"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-3 text-sm font-semibold transition">
+        Save Changes
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ JAVASCRIPT ══════════════ -->
+<script>
+const API = `${location.protocol}//${location.host}`;
+const state = {
+  token: null, username: null, userId: null,
+  categories: [],
+  activeCat: null, activeZip: null,
+  feedMode: 'all',    // 'all' | 'following'
+  activeTag: null,
+  mapMode: false,
+  mapInstance: null,
+  locTab: 'address',
+  _pendingAvatarFile: null,
+};
+
+let _searchTimer = null;
+let _currentDetailPostId = null;
+
+// ── Init ───────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  const saved = localStorage.getItem('shareaspot_session');
+  if (saved) {
+    const s = JSON.parse(saved);
+    state.token = s.token; state.username = s.username; state.userId = s.id;
+    showApp();
+  }
+});
+
+function saveSession(data) {
+  state.token = data.token; state.username = data.username; state.userId = data.id;
+  localStorage.setItem('shareaspot_session', JSON.stringify(data));
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+function showTab(tab) {
+  document.getElementById('form-login').classList.toggle('hidden', tab !== 'login');
+  document.getElementById('form-register').classList.toggle('hidden', tab !== 'register');
+  document.getElementById('tab-login').className    = `flex-1 py-2 text-sm font-medium ${tab==='login'    ? 'bg-blue-600 text-white' : 'text-gray-500'}`;
+  document.getElementById('tab-register').className = `flex-1 py-2 text-sm font-medium ${tab==='register' ? 'bg-blue-600 text-white' : 'text-gray-500'}`;
+  document.getElementById('auth-error').classList.add('hidden');
+}
+
+function showAuthErr(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg; el.classList.remove('hidden');
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-user').value.trim();
+  const password = document.getElementById('login-pass').value;
+  if (!username || !password) return showAuthErr('Please fill in all fields.');
+  try {
+    const res  = await fetch(`${API}/login`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, password})});
+    const data = await res.json();
+    if (!res.ok) return showAuthErr(data.detail || 'Login failed.');
+    saveSession(data); showApp();
+  } catch { showAuthErr('Cannot connect to server. Is it running?'); }
+}
+
+async function doRegister() {
+  const username = document.getElementById('reg-user').value.trim();
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-pass').value;
+  if (!username || !email || !password) return showAuthErr('Please fill in all fields.');
+  try {
+    const res  = await fetch(`${API}/register`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, email, password})});
+    const data = await res.json();
+    if (!res.ok) return showAuthErr(data.detail || 'Registration failed.');
+    saveSession(data); showApp();
+  } catch { showAuthErr('Cannot connect to server. Is it running?'); }
+}
+
+async function showApp() {
+  document.getElementById('auth-screen').classList.add('hidden');
+  document.getElementById('main-app').classList.remove('hidden');
+  updateAvatarBtn();
+  await loadCategories();
+  await loadFeed();
+  fetchUnreadCount();
+  setInterval(() => { if (state.token) fetchUnreadCount(); }, 30000);
+}
+
+function updateAvatarBtn() {
+  const btn = document.getElementById('avatar-btn');
+  if (state.userAvatar) {
+    btn.innerHTML = `<img src="${API}/uploads/${state.userAvatar}" class="w-full h-full object-cover rounded-full"/>`;
+  } else {
+    btn.textContent = state.username?.[0]?.toUpperCase() || '?';
+  }
+}
+
+// ── Feed tabs ──────────────────────────────────────────────────────────────
+function switchFeedTab(mode) {
+  state.feedMode = mode;
+  document.getElementById('tab-all').classList.toggle('active', mode === 'all');
+  document.getElementById('tab-following').classList.toggle('active', mode === 'following');
+  showFeedView();
+  loadFeed();
+}
+
+// ── Categories ─────────────────────────────────────────────────────────────
+async function loadCategories() {
+  try {
+    const res = await fetch(`${API}/categories`);
+    state.categories = await res.json();
+    renderCatBar();
+    renderCatCheckboxes();
+  } catch {}
+}
+
+function renderCatBar() {
+  const bar = document.getElementById('cat-bar');
+  bar.innerHTML = '';
+
+  const allBtn = document.createElement('button');
+  allBtn.id = 'cat-all';
+  allBtn.onclick = () => filterCat(null);
+  allBtn.className = 'cat-filter active shrink-0 bg-blue-600 text-white text-xs font-medium px-4 py-2 rounded-full';
+  allBtn.textContent = '🌍 All Categories';
+  bar.appendChild(allBtn);
+
+  state.categories.forEach(cat => {
+    const btn = document.createElement('button');
+    btn.dataset.cat = cat.id;
+    btn.onclick = () => filterCat(cat.id);
+    btn.className = 'cat-filter shrink-0 bg-gray-100 text-gray-700 text-xs font-medium px-4 py-2 rounded-full';
+    btn.textContent = `${cat.icon} ${cat.name}`;
+    bar.appendChild(btn);
+  });
+}
+
+function renderCatCheckboxes() {
+  const box = document.getElementById('cat-checkboxes');
+  box.innerHTML = '';
+  state.categories.forEach(cat => {
+    const label = document.createElement('label');
+    label.className = 'flex items-center gap-1 cursor-pointer bg-gray-50 hover:bg-blue-50 border border-gray-200 rounded-full px-3 py-1 text-xs transition';
+    label.innerHTML = `<input type="checkbox" value="${cat.id}" class="cat-cb accent-blue-600"/> ${cat.icon} ${cat.name}`;
+    box.appendChild(label);
+  });
+}
+
+function filterCat(catId) {
+  state.activeCat = catId;
+  document.querySelectorAll('.cat-filter').forEach(btn => {
+    btn.classList.remove('active','bg-blue-600','text-white');
+    btn.classList.add('bg-gray-100','text-gray-700');
+  });
+  const active = catId ? document.querySelector(`[data-cat="${catId}"]`) : document.getElementById('cat-all');
+  if (active) { active.classList.add('active','bg-blue-600','text-white'); active.classList.remove('bg-gray-100','text-gray-700'); }
+  showFeedView();
+  loadFeed();
+}
+
+function filterByTag(tagName) {
+  state.activeTag = tagName;
+  document.getElementById('active-tag-label').textContent = tagName;
+  const indicator = document.getElementById('tag-filter-indicator');
+  indicator.classList.remove('hidden');
+  indicator.classList.add('flex');
+  showFeedView();
+  loadFeed();
+}
+
+function clearTagFilter() {
+  state.activeTag = null;
+  const indicator = document.getElementById('tag-filter-indicator');
+  indicator.classList.add('hidden');
+  indicator.classList.remove('flex');
+  loadFeed();
+}
+
+// ── Feed ───────────────────────────────────────────────────────────────────
+function showFeedView() {
+  document.getElementById('feed-view').classList.remove('hidden');
+  document.getElementById('profile-view').classList.add('hidden');
+}
+
+function goHome() {
+  state.feedMode = 'all';
+  state.activeCat = null;
+  state.activeZip = null;
+  state.activeTag = null;
+  document.getElementById('zip-filter').value = '';
+  document.getElementById('tab-all').classList.add('active');
+  document.getElementById('tab-following').classList.remove('active');
+  document.querySelectorAll('.cat-filter').forEach(btn => { btn.classList.remove('active','bg-blue-600','text-white'); btn.classList.add('bg-gray-100','text-gray-700'); });
+  const all = document.getElementById('cat-all');
+  if (all) { all.classList.add('active','bg-blue-600','text-white'); all.classList.remove('bg-gray-100','text-gray-700'); }
+  document.getElementById('tag-filter-indicator').classList.add('hidden');
+  document.getElementById('tag-filter-indicator').classList.remove('flex');
+  showFeedView();
+  loadFeed();
+}
+
+function applyZipFilter() { state.activeZip = document.getElementById('zip-filter').value.trim() || null; loadFeed(); }
+function clearZipFilter()  { state.activeZip = null; document.getElementById('zip-filter').value = ''; loadFeed(); }
+
+async function loadFeed() {
+  document.getElementById('feed-spinner').classList.remove('hidden');
+  document.getElementById('post-grid').innerHTML = '';
+  document.getElementById('empty-msg').classList.add('hidden');
+
+  const params = new URLSearchParams();
+  if (state.token)     params.append('token', state.token);
+  if (state.activeCat) params.append('category_id', state.activeCat);
+  if (state.activeZip) params.append('zip_code', state.activeZip);
+  if (state.feedMode === 'following') params.append('following', 'true');
+  if (state.activeTag)  params.append('tag', state.activeTag);
+
+  try {
+    const res   = await fetch(`${API}/feed?${params}`);
+    const posts = await res.json();
+    document.getElementById('feed-spinner').classList.add('hidden');
+    renderPosts(posts, 'post-grid', 'empty-msg');
+    document.getElementById('post-count').textContent = posts.length ? `${posts.length} spots` : '';
+
+    // Trending strip (All Spots mode only)
+    if (state.feedMode === 'all' && !state.activeCat && !state.activeZip && !state.activeTag) {
+      loadTrending();
+      document.getElementById('trending-strip').classList.remove('hidden');
+    } else {
+      document.getElementById('trending-strip').classList.add('hidden');
+    }
+
+    // Update map if active
+    if (state.mapMode && state.mapInstance) {
+      updateMapMarkers(posts);
+    }
+  } catch {
+    document.getElementById('feed-spinner').classList.add('hidden');
+    document.getElementById('post-grid').innerHTML = '<p class="col-span-full text-center text-red-400 text-sm py-10">Could not reach server.</p>';
+  }
+}
+
+async function loadTrending() {
+  try {
+    const params = state.token ? `?token=${state.token}` : '';
+    const res = await fetch(`${API}/trending${params}`);
+    const posts = await res.json();
+    const container = document.getElementById('trending-cards');
+    if (!posts.length) {
+      document.getElementById('trending-strip').classList.add('hidden');
+      return;
+    }
+    container.innerHTML = posts.map(p => {
+      const img = p.photos?.[0]
+        ? `<img src="${p.photos[0]}" class="w-full h-24 object-cover rounded-lg mb-2" onerror="this.src='https://via.placeholder.com/160x96?text=📍'"/>`
+        : `<div class="w-full h-24 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-lg mb-2 flex items-center justify-center text-3xl">📍</div>`;
+      const hasCoords = p.lat != null && p.lng != null;
+      const mapHint = hasCoords ? `<span class="text-xs text-blue-400">🗺 Jump to map</span>` : '';
+      return `<div class="shrink-0 w-40 cursor-pointer hover:opacity-90 transition" onclick="trendingClick(${p.id},${p.lat ?? 'null'},${p.lng ?? 'null'})">
+        ${img}
+        <p class="text-xs font-semibold text-gray-800 truncate">${esc(p.title)}</p>
+        <div class="flex items-center justify-between mt-0.5">
+          <p class="text-xs text-gray-400">❤️ ${p.likes}</p>
+          ${mapHint}
+        </div>
+      </div>`;
+    }).join('');
+  } catch {}
+}
+
+async function trendingClick(postId, lat, lng) {
+  if (lat != null && lng != null) {
+    // Enable map if not already open
+    if (!state.mapMode) {
+      toggleMapView();
+      // Wait for map to initialise and markers to load
+      await new Promise(r => setTimeout(r, 400));
+    }
+    // Fly to the spot
+    state.mapInstance.flyTo([lat, lng], 14, { animate: true, duration: 0.8 });
+    // Open the popup for this marker
+    state.mapInstance.eachLayer(layer => {
+      if (layer instanceof L.Marker) {
+        const ll = layer.getLatLng();
+        if (Math.abs(ll.lat - lat) < 0.0001 && Math.abs(ll.lng - lng) < 0.0001) {
+          layer.openPopup();
+        }
+      }
+    });
+  } else {
+    // No coords — just open the post detail
+    openPost(postId);
+  }
+}
+
+function renderPosts(posts, gridId, emptyId) {
+  const grid  = document.getElementById(gridId);
+  const empty = emptyId ? document.getElementById(emptyId) : null;
+  if (!posts.length) {
+    grid.innerHTML = '';
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+  if (empty) empty.classList.add('hidden');
+  grid.innerHTML = posts.map(postCard).join('');
+}
+
+// ── Map View ───────────────────────────────────────────────────────────────
+function toggleMapView() {
+  state.mapMode = !state.mapMode;
+  const mapDiv  = document.getElementById('map-view');
+  const grid    = document.getElementById('post-grid');
+  const btn     = document.getElementById('map-toggle');
+  const empty   = document.getElementById('empty-msg');
+
+  if (state.mapMode) {
+    mapDiv.classList.remove('hidden');
+    grid.classList.add('hidden');
+    if (empty) empty.classList.add('hidden');
+    btn.textContent = '📋 Grid';
+    btn.classList.add('bg-blue-100', 'text-blue-700');
+    btn.classList.remove('bg-gray-100', 'text-gray-700');
+    // Initialize map lazily
+    if (!state.mapInstance) {
+      state.mapInstance = L.map('map-view').setView([39.5, -98.35], 4);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19,
+      }).addTo(state.mapInstance);
+    }
+    // Load current feed and place markers
+    loadFeedForMap();
+  } else {
+    mapDiv.classList.add('hidden');
+    grid.classList.remove('hidden');
+    btn.textContent = '🗺 Map';
+    btn.classList.remove('bg-blue-100', 'text-blue-700');
+    btn.classList.add('bg-gray-100', 'text-gray-700');
+  }
+}
+
+async function loadFeedForMap() {
+  const params = new URLSearchParams();
+  if (state.token)     params.append('token', state.token);
+  if (state.activeCat) params.append('category_id', state.activeCat);
+  if (state.activeZip) params.append('zip_code', state.activeZip);
+  if (state.feedMode === 'following') params.append('following', 'true');
+  if (state.activeTag)  params.append('tag', state.activeTag);
+  try {
+    const res   = await fetch(`${API}/feed?${params}`);
+    const posts = await res.json();
+    updateMapMarkers(posts);
+  } catch {}
+}
+
+function updateMapMarkers(posts) {
+  if (!state.mapInstance) return;
+  // Clear existing markers
+  state.mapInstance.eachLayer(layer => {
+    if (layer instanceof L.Marker) state.mapInstance.removeLayer(layer);
+  });
+  const withCoords = posts.filter(p => p.lat != null && p.lng != null);
+  withCoords.forEach(post => {
+    const marker = L.marker([post.lat, post.lng]).addTo(state.mapInstance);
+    marker.bindPopup(`
+      <b>${esc(post.title)}</b><br/>
+      <span style="font-size:12px;color:#6b7280">${esc(post.location_name || '')}</span><br/>
+      <a href="#" onclick="openPost(${post.id}); return false;" style="color:#2563eb;font-size:12px;">View post</a>
+    `);
+  });
+  if (withCoords.length) {
+    state.mapInstance.setView([withCoords[0].lat, withCoords[0].lng], 10);
+  }
+  setTimeout(() => state.mapInstance.invalidateSize(), 100);
+}
+
+// ── Post Card ──────────────────────────────────────────────────────────────
+function postCard(post) {
+  const img = post.photos?.[0]
+    ? `<img src="${post.photos[0]}" class="photo-thumb" onerror="this.src='https://via.placeholder.com/300x220?text=📍'"/>`
+    : `<div class="photo-thumb bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-5xl">📍</div>`;
+
+  const cats = post.categories.map(c => `<span class="cat-chip">${c.icon} ${c.name}</span>`).join('');
+  const tags = post.tags.map(t => `<span class="tag-chip" onclick="event.stopPropagation(); filterByTag('${esc(t)}')">#${esc(t)}</span>`).join('');
+  const liked = post.liked_by_me;
+
+  const addrParts = [post.address_street, post.address_city, post.address_state, post.location_zip].filter(Boolean);
+  const addrLine  = addrParts.length > 1 ? addrParts.join(', ') : (post.location_name || post.location_zip || '');
+
+  const deleteBtn = post.is_mine
+    ? `<button class="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded-full hover:bg-red-600 transition" onclick="event.stopPropagation(); deletePost(${post.id})">🗑</button>
+       <button class="absolute top-2 left-16 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded-full hover:bg-blue-600 transition" onclick="event.stopPropagation(); openEditPost(${post.id})">✏️ Edit</button>`
+    : '';
+
+  return `
+    <div class="bg-white rounded-2xl shadow-sm hover:shadow-md transition overflow-hidden cursor-pointer" onclick="openPost(${post.id})">
+      <div class="relative">${img}
+        ${deleteBtn}
+        <div class="absolute top-2 right-2 bg-black bg-opacity-40 text-white text-xs px-2 py-1 rounded-full max-w-[180px] truncate">📍 ${esc(post.location_name || post.location_zip)}</div>
+      </div>
+      <div class="p-4">
+        <h3 class="font-semibold text-gray-900 text-sm mb-1 truncate">${esc(post.title)}</h3>
+        <p class="text-gray-400 text-xs mb-1 truncate">📌 ${esc(addrLine)}</p>
+        <p class="text-gray-500 text-xs mb-2 line-clamp-2">${esc(post.description)}</p>
+        <div class="mb-2">${cats}${tags}</div>
+        <div class="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+          <div class="flex items-center gap-3">
+            <button class="heart-btn flex items-center gap-1 text-xs text-gray-500 hover:text-red-500 transition ${liked?'liked':''}"
+              onclick="event.stopPropagation(); toggleLike(${post.id}, this)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="${liked?'#ef4444':'none'}" stroke="${liked?'#ef4444':'currentColor'}" stroke-width="2">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+              </svg>
+              <span class="like-count">${post.likes}</span>
+            </button>
+            <span class="flex items-center gap-1 text-xs text-gray-400">
+              💬 ${post.comment_count || 0}
+            </span>
+          </div>
+          <span class="text-xs text-gray-400 hover:text-blue-500 cursor-pointer transition"
+            onclick="event.stopPropagation(); showProfile(${post.author.id})">@${esc(post.author.username)}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Like ───────────────────────────────────────────────────────────────────
+async function toggleLike(postId, btn) {
+  if (!state.token) return;
+  try {
+    const res  = await fetch(`${API}/posts/${postId}/like?token=${state.token}`, {method:'POST'});
+    const data = await res.json();
+    btn.classList.toggle('liked', data.liked);
+    const svg = btn.querySelector('svg');
+    svg.setAttribute('fill',   data.liked ? '#ef4444' : 'none');
+    svg.setAttribute('stroke', data.liked ? '#ef4444' : 'currentColor');
+    btn.querySelector('.like-count').textContent = data.likes;
+  } catch {}
+}
+
+// ── Post Detail ────────────────────────────────────────────────────────────
+async function openPost(postId) {
+  _currentDetailPostId = postId;
+  try {
+    const params = state.token ? `?token=${state.token}` : '';
+    const res  = await fetch(`${API}/posts/${postId}${params}`);
+    const post = await res.json();
+    renderDetailModal(post);
+    document.getElementById('detail-modal').classList.remove('hidden');
+    loadComments(postId);
+  } catch {}
+}
+
+function renderDetailModal(post) {
+  const photos = post.photos || [];
+  const cid    = `c${post.id}`;
+
+  let photoHtml = '';
+  if (photos.length) {
+    photoHtml = `<div class="photo-carousel" id="${cid}">
+      <img src="${photos[0]}" id="${cid}-img" style="width:100%;max-height:420px;object-fit:cover;border-radius:12px 12px 0 0;" onerror="this.src='https://via.placeholder.com/660x420?text=📍'"/>
+      ${photos.length > 1 ? `<div class="dot-nav">${photos.map((_,i)=>`<div class="dot ${i===0?'active':''}" onclick="goPhoto('${cid}',${i})"></div>`).join('')}</div>` : ''}
+    </div>`;
+  } else {
+    photoHtml = `<div style="height:180px;background:linear-gradient(135deg,#dbeafe,#e0e7ff);display:flex;align-items:center;justify-content:center;font-size:56px;border-radius:12px 12px 0 0;">📍</div>`;
+  }
+
+  const street = post.address_street;
+  const cityStateZip = [post.address_city, post.address_state, post.location_zip].filter(Boolean).join(', ');
+  let addressHtml = '';
+  if (street || cityStateZip) {
+    addressHtml = `<div class="bg-gray-50 rounded-xl p-3 mb-4 text-sm text-gray-600">
+      <span class="text-base mr-1">📌</span>
+      ${street ? `<span class="block font-medium text-gray-800">${esc(street)}</span>` : ''}
+      ${cityStateZip ? `<span>${esc(cityStateZip)}</span>` : ''}
+    </div>`;
+  } else if (post.location_name || post.location_zip) {
+    addressHtml = `<div class="bg-gray-50 rounded-xl p-3 mb-4 text-sm text-gray-600">
+      <span class="text-base mr-1">📌</span>
+      <span>${esc(post.location_name || '')} ${post.location_zip ? `(${esc(post.location_zip)})` : ''}</span>
+    </div>`;
+  }
+
+  const cats  = post.categories.map(c=>`<span class="cat-chip">${c.icon} ${c.name}</span>`).join('');
+  const tags  = post.tags.map(t=>`<span class="tag-chip" onclick="closeModal('detail-modal'); filterByTag('${esc(t)}')">#${esc(t)}</span>`).join('');
+  const liked = post.liked_by_me;
+  const date  = new Date(post.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+  const deleteModalBtn = post.is_mine
+    ? `<button onclick="openEditPost(${post.id})" class="text-blue-500 hover:text-blue-700 text-sm mr-3">✏️ Edit</button>
+       <button onclick="deletePost(${post.id}, true)" class="text-red-400 hover:text-red-600 text-sm mr-2">🗑 Delete</button>`
+    : '';
+
+  document.getElementById('detail-content').innerHTML = `
+    ${photoHtml}
+    <div class="p-6">
+      <div class="flex items-start justify-between mb-3">
+        <h2 class="text-xl font-bold text-gray-900 pr-4">${esc(post.title)}</h2>
+        <div class="flex items-center shrink-0">
+          ${deleteModalBtn}
+          <button onclick="closeModal('detail-modal')" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+      </div>
+      ${addressHtml}
+      <p class="text-gray-700 text-sm leading-relaxed mb-4">${esc(post.description)}</p>
+      <div class="mb-4">${cats}${tags}</div>
+      <div class="flex items-center justify-between border-t border-gray-100 pt-4">
+        <button class="heart-btn detail-like flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-red-500 transition ${liked?'liked':''}"
+          onclick="toggleLikeDetail(${post.id}, this)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="${liked?'#ef4444':'none'}" stroke="${liked?'#ef4444':'currentColor'}" stroke-width="2">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+          </svg>
+          <span class="like-count">${post.likes} likes</span>
+        </button>
+        <div class="text-right">
+          <span class="text-sm text-blue-600 cursor-pointer hover:underline"
+            onclick="closeModal('detail-modal'); showProfile(${post.author.id})">@${esc(post.author.username)}</span>
+          <p class="text-xs text-gray-400">${date}</p>
+        </div>
+      </div>
+
+      <!-- Comments Section -->
+      <div class="border-t border-gray-100 pt-4 mt-2">
+        <h4 class="text-sm font-semibold text-gray-700 mb-3">Comments <span id="detail-comment-count" class="text-gray-400 font-normal"></span></h4>
+        <div id="comments-list" class="space-y-3 mb-4 max-h-48 overflow-y-auto"></div>
+        <div class="flex gap-2">
+          <input id="comment-input" type="text" placeholder="Add a comment..."
+            class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-blue-400"
+            onkeydown="if(event.key==='Enter') submitComment()"/>
+          <button onclick="submitComment()"
+            class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-xl transition">Post</button>
+        </div>
+      </div>
+    </div>`;
+
+  window._carousel = { id: cid, photos, current: 0 };
+}
+
+function goPhoto(cid, idx) {
+  const p = window._carousel;
+  if (!p || p.id !== cid) return;
+  p.current = idx;
+  document.getElementById(`${cid}-img`).src = p.photos[idx];
+  document.querySelectorAll(`#${cid} .dot`).forEach((d,i) => d.classList.toggle('active', i===idx));
+}
+
+async function toggleLikeDetail(postId, btn) {
+  if (!state.token) return;
+  try {
+    const res  = await fetch(`${API}/posts/${postId}/like?token=${state.token}`, {method:'POST'});
+    const data = await res.json();
+    btn.classList.toggle('liked', data.liked);
+    btn.querySelector('svg').setAttribute('fill',   data.liked ? '#ef4444' : 'none');
+    btn.querySelector('svg').setAttribute('stroke', data.liked ? '#ef4444' : 'currentColor');
+    btn.querySelector('.like-count').textContent = `${data.likes} likes`;
+    loadFeed();
+  } catch {}
+}
+
+// ── Comments ───────────────────────────────────────────────────────────────
+async function loadComments(postId) {
+  try {
+    const res = await fetch(`${API}/posts/${postId}/comments`);
+    const comments = await res.json();
+    const list = document.getElementById('comments-list');
+    const countEl = document.getElementById('detail-comment-count');
+    if (!list) return;
+    countEl.textContent = comments.length ? `(${comments.length})` : '';
+    if (!comments.length) {
+      list.innerHTML = '<p class="text-xs text-gray-400 text-center py-2">No comments yet. Be the first!</p>';
+      return;
+    }
+    list.innerHTML = comments.map(c => renderComment(c)).join('');
+  } catch {}
+}
+
+function renderComment(c) {
+  const isMine = state.userId && c.author.id === state.userId;
+  const avatarHtml = c.author.avatar
+    ? `<img src="${API}/uploads/${c.author.avatar}" class="w-7 h-7 rounded-full object-cover shrink-0"/>`
+    : `<div class="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600 shrink-0">${(c.author.username?.[0]||'?').toUpperCase()}</div>`;
+  return `<div class="flex items-start gap-2" id="comment-${c.id}">
+    ${avatarHtml}
+    <div class="flex-1 bg-gray-50 rounded-xl px-3 py-2">
+      <span class="text-xs font-semibold text-gray-800">@${esc(c.author.username)}</span>
+      <span class="text-xs text-gray-600 ml-2">${esc(c.content)}</span>
+    </div>
+    ${isMine ? `<button onclick="deleteComment(${c.id})" class="text-gray-300 hover:text-red-400 text-xs mt-1 shrink-0">×</button>` : ''}
+  </div>`;
+}
+
+async function submitComment() {
+  if (!state.token) return;
+  const input = document.getElementById('comment-input');
+  const content = input?.value?.trim();
+  if (!content || !_currentDetailPostId) return;
+  try {
+    const params = new URLSearchParams({ token: state.token, content });
+    const res = await fetch(`${API}/posts/${_currentDetailPostId}/comments?${params}`, { method: 'POST' });
+    if (!res.ok) return;
+    const comment = await res.json();
+    input.value = '';
+    const list = document.getElementById('comments-list');
+    if (list) {
+      // Remove "no comments" message if present
+      if (list.querySelector('p')) list.innerHTML = '';
+      list.insertAdjacentHTML('afterbegin', renderComment(comment));
+      const countEl = document.getElementById('detail-comment-count');
+      const current = parseInt(countEl.textContent.replace(/\D/g,'') || '0');
+      countEl.textContent = `(${current + 1})`;
+    }
+  } catch {}
+}
+
+async function deleteComment(commentId) {
+  if (!state.token) return;
+  try {
+    const res = await fetch(`${API}/comments/${commentId}?token=${state.token}`, { method: 'DELETE' });
+    if (!res.ok) return;
+    const el = document.getElementById(`comment-${commentId}`);
+    if (el) el.remove();
+    const countEl = document.getElementById('detail-comment-count');
+    if (countEl) {
+      const current = parseInt(countEl.textContent.replace(/\D/g,'') || '1');
+      countEl.textContent = current > 1 ? `(${current - 1})` : '';
+    }
+  } catch {}
+}
+
+// ── Edit Post ──────────────────────────────────────────────────────────────
+let _editPostId = null;
+let _editRemovedPhotos = new Set();
+
+async function openEditPost(postId) {
+  // Close detail modal if open
+  closeModal('detail-modal');
+  _editPostId = postId;
+  _editRemovedPhotos = new Set();
+
+  // Fetch current post data
+  const params = state.token ? `?token=${state.token}` : '';
+  const res = await fetch(`${API}/posts/${postId}${params}`);
+  if (!res.ok) { alert('Could not load post.'); return; }
+  const post = await res.json();
+
+  // Prefill fields
+  document.getElementById('edit-title').value = post.title || '';
+  document.getElementById('edit-desc').value  = post.description || '';
+  document.getElementById('edit-tags').value  = (post.tags || []).map(t => '#' + t).join(', ');
+  document.getElementById('edit-error').classList.add('hidden');
+  document.getElementById('edit-photo-previews').innerHTML = '';
+  document.getElementById('edit-photo-input').value = '';
+
+  // Render existing photos with remove buttons
+  const existingEl = document.getElementById('edit-existing-photos');
+  existingEl.innerHTML = '';
+  (post.photos || []).forEach(url => {
+    const fname = url.split('/').pop();
+    const wrap = document.createElement('div');
+    wrap.className = 'relative';
+    wrap.id = `edit-photo-${fname}`;
+    wrap.innerHTML = `
+      <img src="${url}" class="w-20 h-20 object-cover rounded-lg border-2 border-transparent" id="edit-img-${fname}"/>
+      <button type="button" onclick="toggleRemovePhoto('${fname}')"
+        class="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs leading-none">✕</button>`;
+    existingEl.appendChild(wrap);
+  });
+
+  // Render category checkboxes
+  const catsEl = document.getElementById('edit-cats');
+  catsEl.innerHTML = '';
+  (state.categories || []).forEach(cat => {
+    const checked = (post.categories || []).includes(cat.name) ? 'checked' : '';
+    catsEl.innerHTML += `<label class="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+      <input type="checkbox" class="edit-cat-cb" value="${cat.id}" ${checked}/>
+      ${cat.icon || ''} ${cat.name}</label>`;
+  });
+
+  document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function toggleRemovePhoto(fname) {
+  const img = document.getElementById(`edit-img-${fname}`);
+  if (_editRemovedPhotos.has(fname)) {
+    _editRemovedPhotos.delete(fname);
+    img.classList.remove('opacity-30', 'border-red-400');
+    img.classList.add('border-transparent');
+  } else {
+    _editRemovedPhotos.add(fname);
+    img.classList.remove('border-transparent');
+    img.classList.add('opacity-30', 'border-red-400');
+  }
+}
+
+function previewEditPhotos() {
+  const files = document.getElementById('edit-photo-input').files;
+  const container = document.getElementById('edit-photo-previews');
+  container.innerHTML = '';
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      img.className = 'w-20 h-20 object-cover rounded-lg';
+      container.appendChild(img);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function submitEdit() {
+  const errEl = document.getElementById('edit-error');
+  const title = document.getElementById('edit-title').value.trim();
+  const desc  = document.getElementById('edit-desc').value.trim();
+  const tags  = document.getElementById('edit-tags').value.trim();
+
+  if (!title) { errEl.textContent = 'Title is required.'; errEl.classList.remove('hidden'); return; }
+
+  const catIds = [...document.querySelectorAll('.edit-cat-cb:checked')].map(cb => cb.value).join(',');
+  const fd = new FormData();
+  fd.append('token',        state.token);
+  fd.append('title',        title);
+  fd.append('description',  desc);
+  fd.append('tags',         tags);
+  fd.append('category_ids', catIds);
+  fd.append('remove_photos', JSON.stringify([..._editRemovedPhotos]));
+
+  const files = document.getElementById('edit-photo-input').files;
+  for (const file of files) {
+    const compressed = await compressImage(file);
+    fd.append('photos', compressed, file.name);
+  }
+
+  try {
+    const res = await fetch(`${API}/posts/${_editPostId}`, { method: 'PATCH', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      errEl.textContent = err.detail || 'Could not save changes.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    closeModal('edit-modal');
+    loadFeed();
+  } catch { errEl.textContent = 'Network error.'; errEl.classList.remove('hidden'); }
+}
+
+// ── Delete Post ────────────────────────────────────────────────────────────
+async function deletePost(postId, fromModal = false) {
+  if (!confirm('Delete this spot? This cannot be undone.')) return;
+  try {
+    const res = await fetch(`${API}/posts/${postId}?token=${state.token}`, { method: 'DELETE' });
+    if (!res.ok) { alert('Could not delete post.'); return; }
+    if (fromModal) closeModal('detail-modal');
+    loadFeed();
+  } catch { alert('Network error.'); }
+}
+
+// ── Profile ────────────────────────────────────────────────────────────────
+async function showProfile(userId) {
+  document.getElementById('feed-view').classList.add('hidden');
+  document.getElementById('profile-view').classList.remove('hidden');
+  try {
+    const params = state.token ? `?token=${state.token}` : '';
+    const [userRes, postsRes] = await Promise.all([
+      fetch(`${API}/users/${userId}${params}`),
+      fetch(`${API}/users/${userId}/posts${params}`),
+    ]);
+    const user  = await userRes.json();
+    const posts = await postsRes.json();
+
+    // Avatar
+    const avatarWrap = document.getElementById('profile-avatar-wrap');
+    if (user.avatar) {
+      avatarWrap.innerHTML = `<img src="${API}/uploads/${user.avatar}" class="w-16 h-16 rounded-full object-cover"/>`;
+    } else {
+      avatarWrap.innerHTML = `<div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-2xl font-bold text-blue-600">${(user.username?.[0]||'?').toUpperCase()}</div>`;
+    }
+
+    document.getElementById('profile-name').textContent           = '@' + user.username;
+    document.getElementById('profile-bio').textContent            = user.bio || '';
+    document.getElementById('profile-posts').textContent          = user.post_count;
+    document.getElementById('profile-followers').textContent      = user.follower_count;
+    document.getElementById('profile-following-count').textContent = user.following_count;
+
+    const wrap = document.getElementById('follow-btn-wrap');
+    if (user.is_self) {
+      wrap.innerHTML = `<button onclick="openEditProfile()"
+        class="px-5 py-2 rounded-xl text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 transition">
+        ✏️ Edit Profile
+      </button>`;
+    } else {
+      wrap.innerHTML = followBtn(user.id, user.is_following);
+    }
+
+    renderPosts(posts, 'profile-grid', null);
+    const grid = document.getElementById('profile-grid');
+    if (!posts.length) {
+      grid.innerHTML = '<p class="col-span-full text-center text-gray-400 py-12 text-sm">No spots shared yet.</p>';
+    }
+  } catch {}
+}
+
+function followBtn(userId, isFollowing) {
+  return isFollowing
+    ? `<button id="follow-btn" onclick="doFollow(${userId})"
+        class="px-5 py-2 rounded-xl text-sm font-semibold bg-gray-200 hover:bg-gray-300 text-gray-500 transition">
+        ✓ Followed
+       </button>`
+    : `<button id="follow-btn" onclick="doFollow(${userId})"
+        class="px-5 py-2 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition">
+        + Follow
+       </button>`;
+}
+
+async function doFollow(userId) {
+  if (!state.token) { alert('You need to be logged in to follow someone.'); return; }
+  const btn = document.getElementById('follow-btn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  try {
+    const res  = await fetch(`${API}/users/${userId}/follow?token=${state.token}`, {method:'POST'});
+    if (!res.ok) {
+      const err = await res.json();
+      alert('Error: ' + (err.detail || 'Could not follow user.'));
+      if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+      return;
+    }
+    const data = await res.json();
+    document.getElementById('follow-btn-wrap').innerHTML = followBtn(userId, data.following);
+    document.getElementById('profile-followers').textContent = data.follower_count;
+  } catch (e) {
+    alert('Network error — is the server running?');
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  }
+}
+
+// ── Edit Profile ───────────────────────────────────────────────────────────
+function openEditProfile() {
+  document.getElementById('edit-username').value = state.username || '';
+  // Try to get bio from profile-bio if visible
+  const bioEl = document.getElementById('profile-bio');
+  document.getElementById('edit-bio').value = bioEl ? bioEl.textContent : '';
+
+  // Avatar preview
+  const preview = document.getElementById('edit-avatar-preview');
+  if (state.userAvatar) {
+    preview.innerHTML = `<img src="${API}/uploads/${state.userAvatar}" class="w-full h-full object-cover"/>`;
+  } else {
+    preview.textContent = (state.username?.[0]||'?').toUpperCase();
+  }
+  state._pendingAvatarFile = null;
+  document.getElementById('edit-profile-error').classList.add('hidden');
+  document.getElementById('edit-profile-modal').classList.remove('hidden');
+}
+
+function onAvatarFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  state._pendingAvatarFile = file;
+  const preview = document.getElementById('edit-avatar-preview');
+  preview.innerHTML = `<img src="${URL.createObjectURL(file)}" class="w-full h-full object-cover"/>`;
+}
+
+async function saveProfile() {
+  const username = document.getElementById('edit-username').value.trim();
+  const bio      = document.getElementById('edit-bio').value.trim();
+  const errEl    = document.getElementById('edit-profile-error');
+  errEl.classList.add('hidden');
+
+  try {
+    const fd = new FormData();
+    fd.append('token', state.token);
+    if (username) fd.append('username', username);
+    fd.append('bio', bio);
+
+    const res = await fetch(`${API}/users/me`, { method: 'PATCH', body: fd });
+    if (!res.ok) {
+      const d = await res.json();
+      errEl.textContent = d.detail || 'Failed to save.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    const user = await res.json();
+    state.username = user.username;
+    localStorage.setItem('shareaspot_session', JSON.stringify({ token: state.token, username: state.username, id: state.userId }));
+
+    // Upload avatar if pending
+    if (state._pendingAvatarFile) {
+      await uploadAvatar(state._pendingAvatarFile);
+    }
+
+    closeModal('edit-profile-modal');
+    updateAvatarBtn();
+    showProfile(state.userId);
+  } catch {
+    errEl.textContent = 'Network error.';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function uploadAvatar(file) {
+  try {
+    const compressed = await compressImage(file, 400, 0.85);
+    const fd = new FormData();
+    fd.append('token', state.token);
+    fd.append('avatar', compressed, 'avatar.jpg');
+    const res = await fetch(`${API}/users/me/avatar`, { method: 'POST', body: fd });
+    if (res.ok) {
+      const data = await res.json();
+      state.userAvatar = data.avatar;
+      updateAvatarBtn();
+    }
+  } catch {}
+}
+
+// ── Create Post ────────────────────────────────────────────────────────────
+function openCreateModal() {
+  document.getElementById('create-modal').classList.remove('hidden');
+  document.getElementById('photo-previews').innerHTML = '';
+  ['post-title','post-desc','post-street','post-city','post-state','post-zip','post-locname','post-tags','post-lat','post-lng','post-coords-paste'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('coords-parse-msg').classList.add('hidden');
+  switchLocTab('address');
+  document.querySelectorAll('.cat-cb').forEach(cb => cb.checked = false);
+  document.getElementById('create-error').classList.add('hidden');
+  document.getElementById('photo-input').value = '';
+}
+
+function previewPhotos(e) {
+  const c = document.getElementById('photo-previews');
+  c.innerHTML = '';
+  [...e.target.files].forEach(file => {
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(file);
+    img.className = 'preview-img';
+    c.appendChild(img);
+  });
+}
+
+function switchLocTab(tab) {
+  state.locTab = tab;
+  document.getElementById('loc-address-fields').classList.toggle('hidden', tab !== 'address');
+  document.getElementById('loc-coords-fields').classList.toggle('hidden',  tab !== 'coords');
+  document.getElementById('loc-tab-address').className = `px-3 py-1 font-medium transition text-xs ${tab==='address' ? 'bg-blue-600 text-white' : 'text-gray-500'}`;
+  document.getElementById('loc-tab-coords').className  = `px-3 py-1 font-medium transition text-xs ${tab==='coords'  ? 'bg-blue-600 text-white' : 'text-gray-500'}`;
+}
+
+function parseDMS(str) {
+  // Match: 37°14'42.9"N 122°08'43.2"W  (degree symbol variants, smart quotes, etc.)
+  const re = /(\d+)[°º](\d+)[''′`]([0-9.]+)[""″"']([NS])\s*(\d+)[°º](\d+)[''′`]([0-9.]+)[""″"']([EW])/i;
+  const m = str.replace(/’/g,"'").replace(/”/g,'"').match(re);
+  if (!m) return null;
+  const lat = (parseFloat(m[1]) + parseFloat(m[2])/60 + parseFloat(m[3])/3600) * (m[4].toUpperCase()==='S' ? -1 : 1);
+  const lng = (parseFloat(m[5]) + parseFloat(m[6])/60 + parseFloat(m[7])/3600) * (m[8].toUpperCase()==='W' ? -1 : 1);
+  return { lat: parseFloat(lat.toFixed(6)), lng: parseFloat(lng.toFixed(6)) };
+}
+
+function parseDecimalPair(str) {
+  // Match: 40.7061, -73.9969  or  40.7061 -73.9969
+  const m = str.match(/(-?[0-9]+\.[0-9]+)\s*[,\s]\s*(-?[0-9]+\.[0-9]+)/);
+  if (!m) return null;
+  return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+}
+
+function parseCoordsPaste(val) {
+  const msg = document.getElementById('coords-parse-msg');
+  if (!val.trim()) { msg.classList.add('hidden'); return; }
+
+  const result = parseDMS(val) || parseDecimalPair(val);
+  if (result) {
+    document.getElementById('post-lat').value = result.lat;
+    document.getElementById('post-lng').value = result.lng;
+    msg.textContent = `✓ Parsed: ${result.lat}, ${result.lng}`;
+    msg.className = 'text-xs mt-1 text-green-600';
+    msg.classList.remove('hidden');
+  } else {
+    msg.textContent = '⚠ Could not parse — try pasting directly from Google Maps';
+    msg.className = 'text-xs mt-1 text-amber-500';
+    msg.classList.remove('hidden');
+  }
+}
+
+async function submitPost() {
+  const title   = document.getElementById('post-title').value.trim();
+  const desc    = document.getElementById('post-desc').value.trim();
+  const locname = document.getElementById('post-locname').value.trim();
+  const tags    = document.getElementById('post-tags').value.trim();
+  const catIds  = [...document.querySelectorAll('.cat-cb:checked')].map(cb=>cb.value).join(',');
+  const photos  = document.getElementById('photo-input').files;
+  const errEl   = document.getElementById('create-error');
+  const useCoords = state.locTab === 'coords';
+
+  // Pull location values depending on mode
+  const street = useCoords ? '' : document.getElementById('post-street').value.trim();
+  const city   = useCoords ? '' : document.getElementById('post-city').value.trim();
+  const state_ = useCoords ? '' : document.getElementById('post-state').value.trim();
+  const zip    = useCoords ? '00000' : document.getElementById('post-zip').value.trim();
+  const lat    = useCoords ? parseFloat(document.getElementById('post-lat').value) : null;
+  const lng    = useCoords ? parseFloat(document.getElementById('post-lng').value) : null;
+
+  // Validation
+  if (!title || !desc) {
+    errEl.textContent = 'Please fill in a title and description.';
+    errEl.classList.remove('hidden'); return;
+  }
+  if (useCoords) {
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      errEl.textContent = 'Please enter valid coordinates. Latitude: -90 to 90, Longitude: -180 to 180.';
+      errEl.classList.remove('hidden'); return;
+    }
+    if (!locname) {
+      errEl.textContent = 'Please enter a display name for this location.';
+      errEl.classList.remove('hidden'); return;
+    }
+  } else {
+    if (!zip) {
+      errEl.textContent = 'Please enter at least a zip code.';
+      errEl.classList.remove('hidden'); return;
+    }
+  }
+  errEl.classList.add('hidden');
+
+  const autoName = locname || [city, state_].filter(Boolean).join(', ') || zip;
+
+  const fd = new FormData();
+  fd.append('token',          state.token);
+  fd.append('title',          title);
+  fd.append('description',    desc);
+  fd.append('address_street', street);
+  fd.append('address_city',   city);
+  fd.append('address_state',  state_);
+  fd.append('location_zip',   zip);
+  fd.append('location_name',  autoName);
+  fd.append('tags',           tags);
+  fd.append('category_ids',   catIds);
+  // Pass coords directly if provided — backend will skip geocoding
+  if (useCoords) {
+    fd.append('manual_lat', lat);
+    fd.append('manual_lng', lng);
+  }
+
+  // Compress and append photos
+  for (const photo of photos) {
+    const compressed = await compressImage(photo);
+    fd.append('photos', compressed, photo.name);
+  }
+
+  try {
+    const res = await fetch(`${API}/posts`, {method:'POST', body:fd});
+    if (!res.ok) {
+      const d = await res.json();
+      errEl.textContent = d.detail || 'Failed to create post.';
+      errEl.classList.remove('hidden'); return;
+    }
+    closeModal('create-modal');
+    goHome();
+  } catch { errEl.textContent = 'Network error.'; errEl.classList.remove('hidden'); }
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────
+function debounceSearch() {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => {
+    const q = document.getElementById('search-input').value.trim();
+    doSearch(q);
+  }, 400);
+}
+
+async function doSearch(q) {
+  const dropdown = document.getElementById('search-dropdown');
+  if (!q) {
+    dropdown.classList.add('hidden');
+    dropdown.innerHTML = '';
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ q });
+    if (state.token) params.append('token', state.token);
+    const res  = await fetch(`${API}/search?${params}`);
+    const data = await res.json();
+    const { users, posts } = data;
+
+    if (!users.length && !posts.length) {
+      dropdown.innerHTML = '<p class="text-xs text-gray-400 px-4 py-3">No results found.</p>';
+      dropdown.classList.remove('hidden');
+      return;
+    }
+
+    let html = '';
+    if (users.length) {
+      html += `<div class="px-3 pt-2 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wide">People</div>`;
+      html += users.map(u => {
+        const avatarHtml = u.avatar
+          ? `<img src="${API}/uploads/${u.avatar}" class="w-8 h-8 rounded-full object-cover shrink-0"/>`
+          : `<div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600 shrink-0">${(u.username?.[0]||'?').toUpperCase()}</div>`;
+        return `<div class="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer" onclick="document.getElementById('search-input').value=''; document.getElementById('search-dropdown').classList.add('hidden'); showProfile(${u.id})">
+          ${avatarHtml}
+          <div>
+            <div class="text-sm font-medium text-gray-800">@${esc(u.username)}</div>
+            ${u.bio ? `<div class="text-xs text-gray-400 truncate max-w-[200px]">${esc(u.bio)}</div>` : ''}
+          </div>
+          <span class="ml-auto text-xs text-gray-400">${u.post_count} spots</span>
+        </div>`;
+      }).join('');
+    }
+
+    if (posts.length) {
+      html += `<div class="px-3 pt-2 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wide border-t border-gray-100">Spots</div>`;
+      html += posts.slice(0,5).map(p => {
+        const thumb = p.photos?.[0]
+          ? `<img src="${p.photos[0]}" class="w-10 h-10 rounded-lg object-cover shrink-0"/>`
+          : `<div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-xl shrink-0">📍</div>`;
+        return `<div class="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer" onclick="document.getElementById('search-input').value=''; document.getElementById('search-dropdown').classList.add('hidden'); openPost(${p.id})">
+          ${thumb}
+          <div>
+            <div class="text-sm font-medium text-gray-800">${esc(p.title)}</div>
+            <div class="text-xs text-gray-400">${esc(p.location_name || p.location_zip || '')}</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    dropdown.innerHTML = html;
+    dropdown.classList.remove('hidden');
+  } catch {}
+}
+
+// ── Notifications ──────────────────────────────────────────────────────────
+async function fetchUnreadCount() {
+  if (!state.token) return;
+  try {
+    const res  = await fetch(`${API}/notifications/unread-count?token=${state.token}`);
+    const data = await res.json();
+    const badge = document.getElementById('notif-badge');
+    if (data.count > 0) {
+      badge.textContent = data.count > 9 ? '9+' : data.count;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  } catch {}
+}
+
+async function loadNotifications() {
+  if (!state.token) return;
+  try {
+    const res    = await fetch(`${API}/notifications?token=${state.token}`);
+    const notifs = await res.json();
+    const list   = document.getElementById('notif-list');
+
+    if (!notifs.length) {
+      list.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No notifications yet.</p>';
+      return;
+    }
+
+    list.innerHTML = notifs.map(n => {
+      const icon = n.type === 'like' ? '❤️' : n.type === 'follow' ? '👤' : '💬';
+      const msg  = n.type === 'like' ? 'liked your spot'
+                 : n.type === 'follow' ? 'started following you'
+                 : 'commented on your spot';
+      const dot  = n.read ? '' : `<span class="w-2 h-2 rounded-full bg-blue-500 shrink-0 mt-1"></span>`;
+      const clickAction = n.post_id
+        ? `onclick="toggleNotifPanel(); openPost(${n.post_id})"`
+        : `onclick="toggleNotifPanel(); showProfile(${n.actor?.id})"`;
+      return `<div class="flex items-start gap-2 px-3 py-2 rounded-xl hover:bg-gray-50 cursor-pointer ${n.read ? '' : 'bg-blue-50'}" ${clickAction}>
+        <span class="text-lg shrink-0">${icon}</span>
+        <div class="flex-1 min-w-0">
+          <span class="text-xs font-semibold text-gray-800">@${esc(n.actor?.username || '?')}</span>
+          <span class="text-xs text-gray-500"> ${msg}</span>
+        </div>
+        ${dot}
+      </div>`;
+    }).join('');
+  } catch {}
+}
+
+async function toggleNotifPanel() {
+  const panel = document.getElementById('notif-panel');
+  const isHidden = panel.classList.contains('hidden');
+  panel.classList.toggle('hidden');
+  if (isHidden) {
+    await loadNotifications();
+    // Mark all read
+    if (state.token) {
+      fetch(`${API}/notifications/mark-read?token=${state.token}`, { method: 'POST' })
+        .then(() => { document.getElementById('notif-badge').classList.add('hidden'); })
+        .catch(() => {});
+    }
+  }
+}
+
+async function markAllRead() {
+  if (!state.token) return;
+  try {
+    await fetch(`${API}/notifications/mark-read?token=${state.token}`, { method: 'POST' });
+    document.getElementById('notif-badge').classList.add('hidden');
+    await loadNotifications();
+  } catch {}
+}
+
+// ── Image Compression ──────────────────────────────────────────────────────
+async function compressImage(file, maxW=1200, q=0.82) {
+  return new Promise(res => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w=img.width, h=img.height;
+      if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      c.toBlob(b=>res(new File([b],file.name,{type:'image/jpeg'})),'image/jpeg',q);
+    };
+    img.src=url;
+  });
+}
+
+// ── Modals ─────────────────────────────────────────────────────────────────
+function closeModal(id)       { document.getElementById(id).classList.add('hidden'); }
+function closeIfBg(event, id) { if (event.target.id === id) closeModal(id); }
+
+// ── Utils ──────────────────────────────────────────────────────────────────
+function toggleAvatarMenu() {
+  document.getElementById('avatar-dropdown').classList.toggle('hidden');
+}
+function closeAvatarMenu() {
+  document.getElementById('avatar-dropdown').classList.add('hidden');
+}
+function openDeleteAccount() {
+  document.getElementById('delete-confirm-input').value = '';
+  document.getElementById('delete-account-error').classList.add('hidden');
+  document.getElementById('delete-account-modal').classList.remove('hidden');
+}
+
+async function submitDeleteAccount() {
+  const confirm = document.getElementById('delete-confirm-input').value.trim();
+  const errEl   = document.getElementById('delete-account-error');
+  if (confirm !== 'DELETE') {
+    errEl.textContent = 'Please type DELETE exactly to confirm.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  try {
+    const res = await fetch(`${API}/users/me?token=${state.token}`, { method: 'DELETE' });
+    if (!res.ok) { errEl.textContent = 'Could not delete account.'; errEl.classList.remove('hidden'); return; }
+    closeModal('delete-account-modal');
+    doLogout();
+  } catch { errEl.textContent = 'Network error.'; errEl.classList.remove('hidden'); }
+}
+
+function doLogout() {
+  localStorage.removeItem('shareaspot_session');
+  state.token = null; state.username = null; state.userId = null; state.userAvatar = null;
+  document.getElementById('main-app').classList.add('hidden');
+  document.getElementById('auth-screen').classList.remove('hidden');
+  closeAvatarMenu();
+}
+
+function esc(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Close dropdown / panels when clicking outside
+document.addEventListener('click', (e) => {
+  // Avatar dropdown
+  if (!document.getElementById('avatar-menu-wrap')?.contains(e.target)) {
+    closeAvatarMenu();
+  }
+  // Search dropdown
+  if (!document.getElementById('search-wrap')?.contains(e.target)) {
+    document.getElementById('search-dropdown')?.classList.add('hidden');
+  }
+  // Notif panel
+  const notifPanel = document.getElementById('notif-panel');
+  const notifBtn   = document.getElementById('notif-btn');
+  if (notifPanel && notifBtn &&
+      !notifPanel.contains(e.target) &&
+      !notifBtn.contains(e.target)) {
+    notifPanel.classList.add('hidden');
+  }
+});
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</body>
+</html>
