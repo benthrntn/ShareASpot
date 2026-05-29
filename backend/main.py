@@ -259,13 +259,13 @@ def serialize_post(post: Post, current_user_id: int = None):
         "author":         {
             "id":       post.author.id,
             "username": post.author.username,
-            "avatar":   post.author.avatar,
+            "avatar":   post.author.avatar if (post.author.avatar and post.author.avatar.startswith("http")) else (f"/uploads/{post.author.avatar}" if post.author.avatar else None),
         },
         "tags":           [t.name for t in post.tags],
         "categories":     [{"id": c.id, "name": c.name, "icon": c.icon} for c in post.categories],
-        "likes":          len(post.likes),
-        "liked_by_me":    any(l.user_id == current_user_id for l in post.likes) if current_user_id else False,
-        "comment_count":  len(post.comments),
+        "likes":          len(post.likes) if post.likes is not None else 0,
+        "liked_by_me":    any(l.user_id == current_user_id for l in post.likes) if (current_user_id and post.likes) else False,
+        "comment_count":  len(post.comments) if post.comments is not None else 0,
         "is_mine":        post.user_id == current_user_id if current_user_id else False,
         "created_at":     post.created_at.isoformat(),
     }
@@ -627,7 +627,7 @@ def serialize_comment(comment: Comment):
         "author":  {
             "id":       comment.author.id,
             "username": comment.author.username,
-            "avatar":   comment.author.avatar,
+            "avatar":   comment.author.avatar if (comment.author.avatar and comment.author.avatar.startswith("http")) else (f"/uploads/{comment.author.avatar}" if comment.author.avatar else None),
         },
         "created_at": comment.created_at.isoformat(),
     }
@@ -640,7 +640,7 @@ def get_comments(post_id: int, db: Session = Depends(get_db)):
     return [serialize_comment(c) for c in post.comments]
 
 @app.post("/posts/{post_id}/comments")
-def add_comment(post_id: int, token: str, content: str, db: Session = Depends(get_db)):
+def add_comment(post_id: int, token: str = Form(...), content: str = Form(...), db: Session = Depends(get_db)):
     user = require_user(token, db)
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:

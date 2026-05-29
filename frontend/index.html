@@ -1124,8 +1124,11 @@ async function loadComments(postId) {
 
 function renderComment(c) {
   const isMine = state.userId && c.author.id === state.userId;
-  const avatarHtml = c.author.avatar
-    ? `<img src="${API}/uploads/${c.author.avatar}" class="w-7 h-7 rounded-full object-cover shrink-0"/>`
+  const avatarSrc = c.author.avatar
+    ? (c.author.avatar.startsWith('http') ? c.author.avatar : `${API}${c.author.avatar}`)
+    : null;
+  const avatarHtml = avatarSrc
+    ? `<img src="${avatarSrc}" class="w-7 h-7 rounded-full object-cover shrink-0"/>`
     : `<div class="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600 shrink-0">${(c.author.username?.[0]||'?').toUpperCase()}</div>`;
   return `<div class="flex items-start gap-2" id="comment-${c.id}">
     ${avatarHtml}
@@ -1143,8 +1146,10 @@ async function submitComment() {
   const content = input?.value?.trim();
   if (!content || !_currentDetailPostId) return;
   try {
-    const params = new URLSearchParams({ token: state.token, content });
-    const res = await fetch(`${API}/posts/${_currentDetailPostId}/comments?${params}`, { method: 'POST' });
+    const fd = new FormData();
+    fd.append('token', state.token);
+    fd.append('content', content);
+    const res = await fetch(`${API}/posts/${_currentDetailPostId}/comments`, { method: 'POST', body: fd });
     if (!res.ok) return;
     const comment = await res.json();
     input.value = '';
