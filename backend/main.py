@@ -16,8 +16,12 @@ import hashlib, os, uuid, shutil, json, urllib.request, urllib.parse, boto3
 from botocore.config import Config
 
 # ── Database Setup ──────────────────────────────────────────────────────────
-DATABASE_URL = "sqlite:///./shareaspot.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./shareaspot.db")
+# Render provides postgres:// but SQLAlchemy needs postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
