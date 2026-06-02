@@ -315,6 +315,14 @@
 
         <!-- Address fields -->
         <div id="loc-address-fields">
+          <!-- Full address paste -->
+          <div class="mb-2">
+            <input id="post-addr-paste" type="text"
+              placeholder="Paste full address here to auto-fill..."
+              class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"
+              oninput="parseAddressPaste(this.value)"/>
+            <p id="addr-parse-msg" class="text-xs mt-1 hidden"></p>
+          </div>
           <input id="post-street" type="text" placeholder="Street address (e.g. 123 Main St)"
             class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400 mb-2"/>
           <div class="grid grid-cols-3 gap-2">
@@ -1522,10 +1530,11 @@ async function uploadAvatar(file) {
 function openCreateModal() {
   document.getElementById('create-modal').classList.remove('hidden');
   document.getElementById('photo-previews').innerHTML = '';
-  ['post-title','post-desc','post-street','post-city','post-state','post-zip','post-locname','post-tags','post-lat','post-lng','post-coords-paste'].forEach(id => {
+  ['post-title','post-desc','post-addr-paste','post-street','post-city','post-state','post-zip','post-locname','post-tags','post-lat','post-lng','post-coords-paste'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('coords-parse-msg').classList.add('hidden');
+  document.getElementById('addr-parse-msg').classList.add('hidden');
   switchLocTab('address');
   document.querySelectorAll('.cat-cb').forEach(cb => cb.checked = false);
   document.getElementById('create-error').classList.add('hidden');
@@ -1549,6 +1558,79 @@ function switchLocTab(tab) {
   document.getElementById('loc-coords-fields').classList.toggle('hidden',  tab !== 'coords');
   document.getElementById('loc-tab-address').className = `px-3 py-1 font-medium transition text-xs ${tab==='address' ? 'bg-blue-600 text-white' : 'text-gray-500'}`;
   document.getElementById('loc-tab-coords').className  = `px-3 py-1 font-medium transition text-xs ${tab==='coords'  ? 'bg-blue-600 text-white' : 'text-gray-500'}`;
+}
+
+function parseAddressPaste(val) {
+  const msg = document.getElementById('addr-parse-msg');
+  if (!val.trim()) { msg.classList.add('hidden'); return; }
+
+  // US state abbreviations for detection
+  const states = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+    'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC',
+    'ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
+
+  let street = '', city = '', state = '', zip = '';
+
+  // Try: "123 Main St, City, ST 12345" or "123 Main St, City, ST, 12345"
+  // Also handles "123 Main St, City, ST 12345, USA" (Google Maps style)
+  const clean = val.replace(/,?\s*(USA|United States)$/i, '').trim();
+  const parts = clean.split(',').map(p => p.trim()).filter(Boolean);
+
+  if (parts.length >= 2) {
+    // Last part might be "ST 12345" or just "12345" or "ST"
+    const last = parts[parts.length - 1];
+    const zipMatch = last.match(/\b(\d{5}(?:-\d{4})?)\b/);
+    const stateMatch = last.match(/\b([A-Z]{2})\b/);
+
+    if (zipMatch) zip = zipMatch[1];
+    if (stateMatch && states.includes(stateMatch[1])) state = stateMatch[1];
+
+    // If last part had both state and zip, second-to-last is city
+    if (state && zip && parts.length >= 3) {
+      city   = parts[parts.length - 2];
+      street = parts.slice(0, parts.length - 2).join(', ');
+    } else if (state || zip) {
+      // Check second-to-last for whichever we didn't get
+      if (parts.length >= 3) {
+        const secondLast = parts[parts.length - 2];
+        const sl_zip   = secondLast.match(/\b(\d{5}(?:-\d{4})?)\b/);
+        const sl_state = secondLast.match(/\b([A-Z]{2})\b/);
+        if (!zip && sl_zip)   zip   = sl_zip[1];
+        if (!state && sl_state && states.includes(sl_state[1])) state = sl_state[1];
+        city   = parts.length >= 4 ? parts[parts.length - 3] : (state || zip ? secondLast.replace(/\b[A-Z]{2}\b|\b\d{5}\b/g,'').trim() : secondLast);
+        street = parts.slice(0, parts.length - (parts.length >= 4 ? 3 : 2)).join(', ');
+      } else {
+        city   = parts[0];
+        street = '';
+      }
+    } else {
+      // Fallback: first part is street, second is city
+      street = parts[0];
+      city   = parts.slice(1).join(', ');
+    }
+  }
+
+  // Populate fields
+  if (street) document.getElementById('post-street').value = street;
+  if (city)   document.getElementById('post-city').value   = city;
+  if (state)  document.getElementById('post-state').value  = state;
+  if (zip)    document.getElementById('post-zip').value    = zip;
+
+  // Auto-fill display name if empty
+  const locname = document.getElementById('post-locname');
+  if (!locname.value && (city || state)) {
+    locname.value = [city, state].filter(Boolean).join(', ');
+  }
+
+  if (street || city || state || zip) {
+    msg.textContent = `✓ Filled in: ${[street, city, state, zip].filter(Boolean).join(', ')}`;
+    msg.className = 'text-xs mt-1 text-green-600';
+    msg.classList.remove('hidden');
+  } else {
+    msg.textContent = '⚠ Could not parse — try: 123 Main St, City, ST 12345';
+    msg.className = 'text-xs mt-1 text-amber-500';
+    msg.classList.remove('hidden');
+  }
 }
 
 function parseDMS(str) {
