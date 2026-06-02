@@ -314,6 +314,7 @@ CATEGORIES = [
     ("For Foodies",             "🍽️"),
     ("For Families",            "👨‍👩‍👧"),
     ("For Wellness",            "🧘"),
+    ("Wheelchair Accessible",   "♿"),
 ]
 
 @app.on_event("startup")
