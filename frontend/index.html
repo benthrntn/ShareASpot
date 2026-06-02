@@ -201,7 +201,7 @@
   <div class="max-w-5xl mx-auto px-4 py-3">
     <div class="flex items-center gap-2 flex-wrap">
       <div class="flex items-center gap-2 flex-1 min-w-0">
-        <input id="zip-filter" type="text" placeholder="Zip code..." maxlength="10"
+        <input id="zip-filter" type="text" placeholder="Zip / Postcode..." maxlength="10"
           class="border border-gray-200 rounded-xl px-3 py-2 text-sm w-32 focus:border-blue-400 min-w-0"/>
         <button onclick="applyZipFilter()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-3 py-2 rounded-xl transition shrink-0">Apply</button>
         <button onclick="clearZipFilter()" class="text-gray-400 hover:text-gray-600 text-sm shrink-0">Clear</button>
@@ -328,9 +328,9 @@
           <div class="grid grid-cols-3 gap-2">
             <input id="post-city"  type="text" placeholder="City"
               class="col-span-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
-            <input id="post-state" type="text" placeholder="State" maxlength="2"
+            <input id="post-state" type="text" placeholder="State / County" maxlength="30"
               class="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
-            <input id="post-zip"   type="text" placeholder="Zip" maxlength="10"
+            <input id="post-zip"   type="text" placeholder="Zip / Postcode" maxlength="10"
               class="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
           </div>
         </div>
@@ -453,9 +453,9 @@
           <div class="grid grid-cols-3 gap-2">
             <input id="edit-city"  type="text" placeholder="City"
               class="col-span-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
-            <input id="edit-state" type="text" placeholder="State" maxlength="2"
+            <input id="edit-state" type="text" placeholder="State / County" maxlength="30"
               class="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
-            <input id="edit-zip"   type="text" placeholder="Zip" maxlength="10"
+            <input id="edit-zip"   type="text" placeholder="Zip / Postcode" maxlength="10"
               class="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
           </div>
         </div>
