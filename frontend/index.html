@@ -495,9 +495,15 @@
       <!-- Tags -->
       <div>
         <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1 block">Tags</label>
-        <input id="edit-tags" type="text" placeholder="#golden-hour, #urban, #rooftop"
-          class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
-        <p class="text-xs text-gray-400 mt-1">Comma-separated, # optional</p>
+        <div id="edit-tag-chips" class="flex flex-wrap gap-2 mb-2"></div>
+        <div class="flex gap-2">
+          <input id="edit-tag-input" type="text" placeholder="Add a tag and press Enter"
+            class="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();addEditTag();}"/>
+          <button type="button" onclick="addEditTag()"
+            class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-4 py-2 rounded-xl transition shrink-0">Add</button>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">Press Enter or click Add. Click a tag to remove it.</p>
       </div>
 
       <p id="edit-error" class="text-red-500 text-sm hidden"></p>
@@ -1300,6 +1306,35 @@ async function deleteComment(commentId) {
 // ── Edit Post ──────────────────────────────────────────────────────────────
 let _editPostId = null;
 let _editRemovedPhotos = new Set();
+let _editTags = [];
+
+function renderEditTagChips() {
+  const container = document.getElementById('edit-tag-chips');
+  container.innerHTML = '';
+  _editTags.forEach(tag => {
+    const chip = document.createElement('span');
+    chip.className = 'inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs px-3 py-1 rounded-full cursor-pointer hover:bg-red-100 hover:text-red-600 transition';
+    chip.title = 'Click to remove';
+    chip.innerHTML = `#${tag} <span class="font-bold">×</span>`;
+    chip.onclick = () => {
+      _editTags = _editTags.filter(t => t !== tag);
+      renderEditTagChips();
+    };
+    container.appendChild(chip);
+  });
+}
+
+function addEditTag() {
+  const input = document.getElementById('edit-tag-input');
+  const raw = input.value.trim().replace(/^#/, '').toLowerCase();
+  if (!raw) return;
+  // Support comma-separated input
+  raw.split(',').map(t => t.trim().replace(/^#/,'')).filter(Boolean).forEach(t => {
+    if (!_editTags.includes(t)) _editTags.push(t);
+  });
+  input.value = '';
+  renderEditTagChips();
+}
 
 async function openEditPost(postId) {
   // Close detail modal if open
@@ -1316,8 +1351,11 @@ async function openEditPost(postId) {
   // Prefill fields
   document.getElementById('edit-title').value   = post.title || '';
   document.getElementById('edit-desc').value    = post.description || '';
-  document.getElementById('edit-tags').value    = (post.tags || []).map(t => '#' + t).join(', ');
+  document.getElementById('edit-tag-input').value = '';
   document.getElementById('edit-error').classList.add('hidden');
+  // Render existing tags as chips
+  _editTags = (post.tags || []).map(t => t.toLowerCase().replace(/^#/,''));
+  renderEditTagChips();
   document.getElementById('edit-photo-previews').innerHTML = '';
   document.getElementById('edit-photo-input').value = '';
 
@@ -1402,7 +1440,7 @@ async function submitEdit() {
   const errEl    = document.getElementById('edit-error');
   const title    = document.getElementById('edit-title').value.trim();
   const desc     = document.getElementById('edit-desc').value.trim();
-  const tags     = document.getElementById('edit-tags').value.trim();
+  const tags     = _editTags.join(',');
   const locname  = document.getElementById('edit-locname').value.trim();
   const useCoords = document.getElementById('edit-loc-coords-fields').classList.contains('hidden') === false;
 
