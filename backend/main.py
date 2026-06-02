@@ -454,15 +454,23 @@ async def create_post(
 
 @app.patch("/posts/{post_id}")
 async def edit_post(
-    post_id:     int,
-    token:       str              = Form(...),
-    title:       Optional[str]    = Form(None),
-    description: Optional[str]    = Form(None),
-    tags:        Optional[str]    = Form(None),
-    category_ids:Optional[str]    = Form(None),
-    remove_photos: Optional[str]  = Form(None),   # JSON array of filenames to remove
-    photos:      List[UploadFile] = File([]),
-    db:          Session          = Depends(get_db),
+    post_id:        int,
+    token:          str              = Form(...),
+    title:          Optional[str]    = Form(None),
+    description:    Optional[str]    = Form(None),
+    tags:           Optional[str]    = Form(None),
+    category_ids:   Optional[str]    = Form(None),
+    remove_photos:  Optional[str]    = Form(None),
+    location_name:  Optional[str]    = Form(None),
+    address_street: Optional[str]    = Form(None),
+    address_city:   Optional[str]    = Form(None),
+    address_state:  Optional[str]    = Form(None),
+    location_zip:   Optional[str]    = Form(None),
+    manual_lat:     Optional[float]  = Form(None),
+    manual_lng:     Optional[float]  = Form(None),
+    regeocode:      Optional[str]    = Form(None),
+    photos:         List[UploadFile] = File([]),
+    db:             Session          = Depends(get_db),
 ):
     user = require_user(token, db)
     post = db.query(Post).filter(Post.id == post_id).first()
@@ -475,6 +483,27 @@ async def edit_post(
         post.title = title
     if description is not None:
         post.description = description
+    if location_name is not None:
+        post.location_name = location_name
+
+    # Update location
+    if manual_lat is not None and manual_lng is not None:
+        post.lat = manual_lat
+        post.lng = manual_lng
+        if address_street is not None: post.address_street = ''
+        if address_city   is not None: post.address_city   = ''
+        if address_state  is not None: post.address_state  = ''
+    elif regeocode:
+        if address_street is not None: post.address_street = address_street
+        if address_city   is not None: post.address_city   = address_city
+        if address_state  is not None: post.address_state  = address_state
+        if location_zip   is not None: post.location_zip   = location_zip
+        addr_parts = [post.address_street, post.address_city, post.address_state, post.location_zip]
+        addr_str = ", ".join(p for p in addr_parts if p)
+        if addr_str:
+            lat, lng = geocode(addr_str)
+            post.lat = lat
+            post.lng = lng
 
     # Handle photo removals
     existing = json.loads(post.photos or "[]")

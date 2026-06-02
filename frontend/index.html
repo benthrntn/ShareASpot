@@ -430,6 +430,62 @@
         <textarea id="edit-desc" rows="4" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400 resize-none"></textarea>
       </div>
 
+      <!-- Location -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Location</label>
+          <div class="flex border border-gray-200 rounded-lg overflow-hidden text-xs">
+            <button type="button" id="edit-loc-tab-address" onclick="switchEditLocTab('address')"
+              class="px-3 py-1 bg-blue-600 text-white font-medium transition">Address</button>
+            <button type="button" id="edit-loc-tab-coords" onclick="switchEditLocTab('coords')"
+              class="px-3 py-1 text-gray-500 font-medium transition">Coordinates</button>
+          </div>
+        </div>
+
+        <!-- Address fields -->
+        <div id="edit-loc-address-fields">
+          <input id="edit-addr-paste" type="text" placeholder="Paste full address to auto-fill..."
+            class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400 mb-2"
+            oninput="parseEditAddressPaste(this.value)"/>
+          <p id="edit-addr-parse-msg" class="text-xs mb-2 hidden"></p>
+          <input id="edit-street" type="text" placeholder="Street address"
+            class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400 mb-2"/>
+          <div class="grid grid-cols-3 gap-2">
+            <input id="edit-city"  type="text" placeholder="City"
+              class="col-span-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+            <input id="edit-state" type="text" placeholder="State" maxlength="2"
+              class="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+            <input id="edit-zip"   type="text" placeholder="Zip" maxlength="10"
+              class="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+          </div>
+        </div>
+
+        <!-- Coordinate fields -->
+        <div id="edit-loc-coords-fields" class="hidden">
+          <input id="edit-coords-paste" type="text"
+            placeholder='Paste from Google Maps or decimal coords'
+            class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400 mb-2"
+            oninput="parseEditCoordsPaste(this.value)"/>
+          <p id="edit-coords-parse-msg" class="text-xs mb-2 hidden"></p>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Latitude</label>
+              <input id="edit-lat" type="number" step="any"
+                class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Longitude</label>
+              <input id="edit-lng" type="number" step="any"
+                class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+            </div>
+          </div>
+        </div>
+
+        <!-- Display name -->
+        <input id="edit-locname" type="text" placeholder="Display name (e.g. Brooklyn, NY)"
+          class="mt-2 w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:border-blue-400"/>
+      </div>
+
       <!-- Categories -->
       <div>
         <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2 block">Who is this spot for?</label>
@@ -1258,12 +1314,32 @@ async function openEditPost(postId) {
   const post = await res.json();
 
   // Prefill fields
-  document.getElementById('edit-title').value = post.title || '';
-  document.getElementById('edit-desc').value  = post.description || '';
-  document.getElementById('edit-tags').value  = (post.tags || []).map(t => '#' + t).join(', ');
+  document.getElementById('edit-title').value   = post.title || '';
+  document.getElementById('edit-desc').value    = post.description || '';
+  document.getElementById('edit-tags').value    = (post.tags || []).map(t => '#' + t).join(', ');
   document.getElementById('edit-error').classList.add('hidden');
   document.getElementById('edit-photo-previews').innerHTML = '';
   document.getElementById('edit-photo-input').value = '';
+
+  // Prefill location
+  const hasCoords = post.lat != null && post.lng != null;
+  const hasAddress = post.address_street || post.address_city;
+  if (hasCoords && !hasAddress) {
+    switchEditLocTab('coords');
+    document.getElementById('edit-lat').value = post.lat;
+    document.getElementById('edit-lng').value = post.lng;
+  } else {
+    switchEditLocTab('address');
+    document.getElementById('edit-street').value  = post.address_street || '';
+    document.getElementById('edit-city').value    = post.address_city   || '';
+    document.getElementById('edit-state').value   = post.address_state  || '';
+    document.getElementById('edit-zip').value     = post.location_zip   || '';
+  }
+  document.getElementById('edit-locname').value = post.location_name || '';
+  document.getElementById('edit-addr-paste').value   = '';
+  document.getElementById('edit-coords-paste').value = '';
+  document.getElementById('edit-addr-parse-msg').classList.add('hidden');
+  document.getElementById('edit-coords-parse-msg').classList.add('hidden');
 
   // Render existing photos with remove buttons
   const existingEl = document.getElementById('edit-existing-photos');
@@ -1323,10 +1399,12 @@ function previewEditPhotos() {
 }
 
 async function submitEdit() {
-  const errEl = document.getElementById('edit-error');
-  const title = document.getElementById('edit-title').value.trim();
-  const desc  = document.getElementById('edit-desc').value.trim();
-  const tags  = document.getElementById('edit-tags').value.trim();
+  const errEl    = document.getElementById('edit-error');
+  const title    = document.getElementById('edit-title').value.trim();
+  const desc     = document.getElementById('edit-desc').value.trim();
+  const tags     = document.getElementById('edit-tags').value.trim();
+  const locname  = document.getElementById('edit-locname').value.trim();
+  const useCoords = document.getElementById('edit-loc-coords-fields').classList.contains('hidden') === false;
 
   if (!title) { errEl.textContent = 'Title is required.'; errEl.classList.remove('hidden'); return; }
 
@@ -1337,7 +1415,24 @@ async function submitEdit() {
   fd.append('description',  desc);
   fd.append('tags',         tags);
   fd.append('category_ids', catIds);
+  fd.append('location_name', locname);
   fd.append('remove_photos', JSON.stringify([..._editRemovedPhotos]));
+
+  if (useCoords) {
+    const lat = parseFloat(document.getElementById('edit-lat').value);
+    const lng = parseFloat(document.getElementById('edit-lng').value);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      fd.append('manual_lat', lat);
+      fd.append('manual_lng', lng);
+      fd.append('location_zip', '00000');
+    }
+  } else {
+    fd.append('address_street', document.getElementById('edit-street').value.trim());
+    fd.append('address_city',   document.getElementById('edit-city').value.trim());
+    fd.append('address_state',  document.getElementById('edit-state').value.trim());
+    fd.append('location_zip',   document.getElementById('edit-zip').value.trim() || '00000');
+    fd.append('regeocode', '1');
+  }
 
   const files = document.getElementById('edit-photo-input').files;
   for (const file of files) {
@@ -1665,6 +1760,72 @@ function parseCoordsPaste(val) {
     msg.textContent = '⚠ Could not parse — try pasting directly from Google Maps';
     msg.className = 'text-xs mt-1 text-amber-500';
     msg.classList.remove('hidden');
+  }
+}
+
+// ── Edit modal location helpers ────────────────────────────────────────────
+function switchEditLocTab(tab) {
+  document.getElementById('edit-loc-address-fields').classList.toggle('hidden', tab !== 'address');
+  document.getElementById('edit-loc-coords-fields').classList.toggle('hidden',  tab !== 'coords');
+  document.getElementById('edit-loc-tab-address').className = `px-3 py-1 font-medium transition text-xs ${tab==='address' ? 'bg-blue-600 text-white' : 'text-gray-500'}`;
+  document.getElementById('edit-loc-tab-coords').className  = `px-3 py-1 font-medium transition text-xs ${tab==='coords'  ? 'bg-blue-600 text-white' : 'text-gray-500'}`;
+}
+
+function parseEditAddressPaste(val) {
+  const msg = document.getElementById('edit-addr-parse-msg');
+  if (!val.trim()) { msg.classList.add('hidden'); return; }
+  const states = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+    'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC',
+    'ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
+  let street = '', city = '', state = '', zip = '';
+  const clean = val.replace(/,?\s*(USA|United States)$/i, '').trim();
+  const parts = clean.split(',').map(p => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1];
+    const zipMatch = last.match(/\b(\d{5}(?:-\d{4})?)\b/);
+    const stateMatch = last.match(/\b([A-Z]{2})\b/);
+    if (zipMatch) zip = zipMatch[1];
+    if (stateMatch && states.includes(stateMatch[1])) state = stateMatch[1];
+    if (state && zip && parts.length >= 3) {
+      city = parts[parts.length - 2];
+      street = parts.slice(0, parts.length - 2).join(', ');
+    } else if ((state || zip) && parts.length >= 3) {
+      const sl = parts[parts.length - 2];
+      const slZip = sl.match(/\b(\d{5}(?:-\d{4})?)\b/);
+      const slState = sl.match(/\b([A-Z]{2})\b/);
+      if (!zip && slZip) zip = slZip[1];
+      if (!state && slState && states.includes(slState[1])) state = slState[1];
+      city = parts.length >= 4 ? parts[parts.length - 3] : sl.replace(/\b[A-Z]{2}\b|\b\d{5}\b/g,'').trim();
+      street = parts.slice(0, parts.length - (parts.length >= 4 ? 3 : 2)).join(', ');
+    } else { street = parts[0]; city = parts.slice(1).join(', '); }
+  }
+  if (street) document.getElementById('edit-street').value = street;
+  if (city)   document.getElementById('edit-city').value   = city;
+  if (state)  document.getElementById('edit-state').value  = state;
+  if (zip)    document.getElementById('edit-zip').value    = zip;
+  const ln = document.getElementById('edit-locname');
+  if (!ln.value && (city || state)) ln.value = [city, state].filter(Boolean).join(', ');
+  if (street || city || state || zip) {
+    msg.textContent = `✓ Filled in: ${[street,city,state,zip].filter(Boolean).join(', ')}`;
+    msg.className = 'text-xs mb-2 text-green-600'; msg.classList.remove('hidden');
+  } else {
+    msg.textContent = '⚠ Could not parse — try: 123 Main St, City, ST 12345';
+    msg.className = 'text-xs mb-2 text-amber-500'; msg.classList.remove('hidden');
+  }
+}
+
+function parseEditCoordsPaste(val) {
+  const msg = document.getElementById('edit-coords-parse-msg');
+  if (!val.trim()) { msg.classList.add('hidden'); return; }
+  const result = parseDMS(val) || parseDecimalPair(val);
+  if (result) {
+    document.getElementById('edit-lat').value = result.lat;
+    document.getElementById('edit-lng').value = result.lng;
+    msg.textContent = `✓ Parsed: ${result.lat}, ${result.lng}`;
+    msg.className = 'text-xs mb-2 text-green-600'; msg.classList.remove('hidden');
+  } else {
+    msg.textContent = '⚠ Could not parse — try pasting directly from Google Maps';
+    msg.className = 'text-xs mb-2 text-amber-500'; msg.classList.remove('hidden');
   }
 }
 
